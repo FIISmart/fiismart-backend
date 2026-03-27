@@ -5,6 +5,7 @@
     <option name="originalFiles">
       <list>
         <option value="$PROJECT_DIR$/Dashboard/pom.xml" />
+        <option value="$PROJECT_DIR$/Database/DatabaseDAO/DBDAO/pom.xml" />
       </list>
     </option>
   </component>
