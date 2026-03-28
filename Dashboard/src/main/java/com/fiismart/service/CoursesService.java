@@ -6,10 +6,13 @@ import database.dao.EnrollmentDAO;
 import database.model.Course;
 import database.model.Enrollment;
 import org.bson.types.ObjectId;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.messaging.Task;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class CoursesService {
@@ -40,29 +43,5 @@ public class CoursesService {
         return result;
     }
 
-    @Autowired
-    private CourseRepository courseRepository;
 
-    public int calculateOverallProgress(Long courseId, Long studentId) {
-        Optional<Course> courseOptional = courseRepository.findById(courseId);
-
-        if (courseOptional.isEmpty()) {
-            return 0;
-        }
-
-        Course currentCourse = courseOptional.get();
-        List<Task> allCourseTasks = currentCourse.getTasks();
-
-        if (allCourseTasks == null || allCourseTasks.isEmpty()) {
-            return 0;
-        }
-
-        long completedTasksCount = allCourseTasks.stream()
-                .filter(task -> task.isCompletedByStudent(studentId))
-                .count();
-
-        double exactProgress = ((double) completedTasksCount / allCourseTasks.size()) * 100;
-
-        return (int) Math.round(exactProgress);
-    }
 }
