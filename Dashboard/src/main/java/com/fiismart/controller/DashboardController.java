@@ -31,4 +31,18 @@ public class DashboardController {
     public List<StudentAnswerDTO> getStudentAnswers(@PathVariable String studentId) {
         return dashboardService.getAnswersForStudent(studentId);
     }
+
+    @GetMapping("/progress/{studentId}")
+    public ResponseEntity<List<CourseProgressDTO>> getDashboardProgress(@PathVariable Long studentId) {
+        List<Course> enrolledCourses = courseService.getEnrolledCourses(studentId);
+
+        List<CourseProgressDTO> progressList = enrolledCourses.stream()
+                .map(course -> {
+                    int progress = courseService.calculateOverallProgress(course.getId(), studentId);
+                    return new CourseProgressDTO(course.getName(), progress);
+                })
+                .toList();
+
+        return ResponseEntity.ok(progressList);
+    }
 }
