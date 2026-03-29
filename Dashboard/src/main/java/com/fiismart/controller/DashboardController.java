@@ -3,6 +3,7 @@ package com.fiismart.controller;
 import com.fiismart.dto.ContinueLearningDTO;
 import com.fiismart.dto.QuizStudentDTO;
 import com.fiismart.dto.StudentAnswerDTO;
+import com.fiismart.dto.UserNameDTO;
 import com.fiismart.service.DashboardService;
 import database.model.Course;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +33,12 @@ public class DashboardController {
     @GetMapping("/{studentId}/answers")
     public List<StudentAnswerDTO> getStudentAnswers(@PathVariable String studentId) {
         return dashboardService.getAnswersForStudent(studentId);
+    }
+
+    @GetMapping("/{studentId}/name")
+    public ResponseEntity<UserNameDTO> getStudentName(@PathVariable String studentId) {
+        UserNameDTO response = dashboardService.getStudentName(studentId);
+        return ResponseEntity.ok(response);
     }
 
 }

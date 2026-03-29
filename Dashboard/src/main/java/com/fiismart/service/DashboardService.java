@@ -1,6 +1,7 @@
 package com.fiismart.service;
 
 import com.fiismart.dto.StudentAnswerDTO;
+import com.fiismart.dto.UserNameDTO;
 import database.dao.CourseDAO;
 import database.dao.EnrollmentDAO;
 import database.dao.QuizAttemptDAO;
@@ -103,6 +104,36 @@ public class DashboardService {
         }
 
         return result;
+    }
+
+    public UserNameDTO getStudentName(String studentIdHex) {
+        UserNameDTO dto = new UserNameDTO();
+
+        try {
+            // Transformam string-ul venit de la frontend in ObjectId, asa cum ai facut si la celelalte metode
+            ObjectId studentId = new ObjectId(studentIdHex);
+
+            // Cautam user-ul folosind UserDAO pe care il ai deja sus
+            database.model.User user = userDAO.findById(studentId);
+
+            if (user != null && user.getDisplayName() != null) {
+                // Scoatem spatiile inutile de la inceput/sfarsit, daca exista
+                String numeComplet = user.getDisplayName().trim();
+
+                // Taiem textul oriunde gaseste un spatiu si luam prima bucata [0]
+                String primulNume = numeComplet.split("\\s+")[0];
+
+                dto.setDisplayName(primulNume);
+            } else {
+                dto.setDisplayName("User Necunoscut");
+            }
+
+        } catch (Exception e) {
+            // In caz ca pica conversia de id sau nu raspunde baza de date
+            dto.setDisplayName("Eroare la gasirea utilizatorului");
+        }
+
+        return dto;
     }
 
 }
