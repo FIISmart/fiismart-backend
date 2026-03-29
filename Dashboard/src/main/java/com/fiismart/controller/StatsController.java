@@ -1,5 +1,6 @@
 package com.fiismart.controller;
 
+import com.fiismart.dto.CourseSummaryDTO;
 import com.fiismart.dto.StatsDTO;
 import com.fiismart.service.StatsService;
 import org.springframework.web.bind.annotation.*;
@@ -16,7 +17,7 @@ public class StatsController {
     }
 
     @GetMapping("/{studentId}/stats")
-    public StatsDTO getStats(@PathVariable String studentId) {
-        return statsService.getStats(studentId);
-    }
+    public StatsDTO getStats(@PathVariable String studentId) {return statsService.getStats(studentId);}
+
+    public CourseSummaryDTO computeProgress(@PathVariable String studentId) {return statsService.computeProgress(studentId);}
 }
