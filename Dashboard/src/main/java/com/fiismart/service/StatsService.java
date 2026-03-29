@@ -1,5 +1,6 @@
 package com.fiismart.service;
 
+import com.fiismart.dto.CourseSummaryDTO;
 import com.fiismart.dto.StatsDTO;
 import database.dao.EnrollmentDAO;
 import database.dao.QuizAttemptDAO;
@@ -16,6 +17,7 @@ public class StatsService {
 
     private final EnrollmentDAO enrollmentDAO = new EnrollmentDAO();
     private final QuizAttemptDAO quizAttemptDAO = new QuizAttemptDAO();
+    private final CourseSummaryDTO courseSummaryDTO = new CourseSummaryDTO();
 
     public StatsDTO getStats(String studentId) {
         ObjectId id = new ObjectId(studentId);
@@ -67,5 +69,27 @@ public class StatsService {
         }
 
         return streak;
+    }
+
+    public CourseSummaryDTO computeProgress(String studentId) {
+        ObjectId studentObjectId = new ObjectId(studentId);
+        List<Enrollment> userEnrollments = enrollmentDAO.findByStudentId(studentObjectId);
+        StatsDTO statsDTO = new StatsDTO();
+        CourseSummaryDTO courseSummaryDTO = new CourseSummaryDTO();
+
+        if (userEnrollments == null || userEnrollments.isEmpty()) {
+            courseSummaryDTO.setOverallProgress(0);
+            return courseSummaryDTO;
+        }
+
+        double averageProgress = userEnrollments.stream()
+                .filter(enrollment -> enrollment.getCourseId() != null)
+                .mapToInt(enrollment -> enrollment.getOverallProgress())
+                .average()
+                .orElse(0.0);
+
+        courseSummaryDTO.setOverallProgress((int) averageProgress);
+
+        return courseSummaryDTO;
     }
 }
