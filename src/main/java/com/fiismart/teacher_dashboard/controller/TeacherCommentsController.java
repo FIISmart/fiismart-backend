@@ -1,0 +1,28 @@
+package com.fiismart.teacher_dashboard.controller;
+
+import com.fiismart.teacher_dashboard.dto.TeacherCommentPreviewDTO;
+import com.fiismart.teacher_dashboard.service.TeacherCommentsService;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/teacher-dashboard")
+@CrossOrigin(origins = "*")
+public class TeacherCommentsController {
+
+    private final TeacherCommentsService teacherCommentsService;
+
+    public TeacherCommentsController(TeacherCommentsService teacherCommentsService) {
+        this.teacherCommentsService = teacherCommentsService;
+    }
+
+    @GetMapping("/me/comments")
+    public List<TeacherCommentPreviewDTO> getComments(
+            @RequestHeader("X-Dev-UserId") String teacherId,
+            @RequestParam(defaultValue = "30") int limit,
+            @RequestParam(defaultValue = "0") int offset) {
+        return teacherCommentsService.getComments(teacherId, limit, offset);
+    }
+}
+
