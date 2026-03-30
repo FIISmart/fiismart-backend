@@ -10,6 +10,22 @@ Spring Boot migration of the legacy `Database/DatabaseDAO` layer. Exposes a full
 - Maven 3.9+
 - MongoDB running on `localhost:27017`
 
+
+If you do not have MongoDB installed locally, you can use Docker to quickly spin up the database.
+
+STEPS TO START THE DATABASE WITH DOCKER 🐋:
+----------------------------------
+
+Run the following command in the directory containing the 
+`docker-compose.yaml` file to start the container:
+```bash
+docker compose up --build -d
+```
+And to stop and remove the container:
+```bash
+docker compose down -v
+```
+* Note: The `-v` flag is used to remove volumes (use this if you want to wipe the database data).
 ---
 
 ## Build & Run
