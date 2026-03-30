@@ -1,5 +1,6 @@
 package database.model;
 
+import database.model.Lecture;
 import lombok.Builder;
 import lombok.Data;
 import org.bson.Document;
@@ -34,7 +35,7 @@ public class Course {
 
     public Document toDocument() {
         List<Document> lectureDocs = lectures != null
-                ? lectures.stream().map(Lecture::toDocument).collect(Collectors.toList())
+                ? lectures.stream().map(database.model.Lecture::toDocument).collect(Collectors.toList())
                 : new ArrayList<>();
 
         return new Document()
