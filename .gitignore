@@ -139,3 +139,4 @@ docker-compose.override.yml
 *.swp
 *.swo
 *.orig
+CLAUDE.md
