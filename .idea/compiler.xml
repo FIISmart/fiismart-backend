@@ -7,16 +7,7 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
-      </profile>
-      <profile name="Annotation profile for fiismart-parent" enabled="true">
-        <sourceOutputDir name="target/generated-sources/annotations" />
-        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
-        <outputRelativeToContentRoot value="true" />
-        <processorPath useClasspath="false">
-          <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.32/lombok-1.18.32.jar" />
-          <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.32/lombok-1.18.32.jar" />
-        </processorPath>
-        <module name="Dashboard" />
+        <module name="FIISmartSeedingScript" />
       </profile>
       <profile name="Annotation profile for dashboard-studenti" enabled="true">
         <sourceOutputDir name="target/generated-sources/annotations" />
@@ -26,19 +17,11 @@
           <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.32/lombok-1.18.32.jar" />
         </processorPath>
         <module name="dashboard-studenti" />
-      </profile>
-      <profile name="Annotation profile for DBDAO" enabled="true">
-        <sourceOutputDir name="target/generated-sources/annotations" />
-        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
-        <outputRelativeToContentRoot value="true" />
-        <processorPath useClasspath="false">
-          <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.32/lombok-1.18.32.jar" />
-        </processorPath>
-        <module name="DBDAO" />
+        <module name="Dashboard" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
-      <module name="FIISmartSeedingScript" target="9" />
+      <module name="DBDAO" target="21" />
     </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
