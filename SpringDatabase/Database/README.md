@@ -4,6 +4,19 @@ Spring Boot migration of the legacy `Database/DatabaseDAO` layer. Exposes a full
 
 ---
 
+# ⚠️ Important: Database & Controller Usage
+## Note on API Controllers:
+- The existing API Controllers in this project are provided strictly as functional examples. You should not use or extend them for your core implementation.
+
+## Direct Backend Access:
+- The database logic is handled directly within the Backend/Service layer. You are expected to interact with the database through the internal services and repositories, not by making HTTP calls to the example controllers.
+
+## Summary:
+
+- Controllers: Reference only (Example purposes).
+- Database: Access it directly via the Backend services.
+
+
 ## Requirements
 
 - Java 21
@@ -11,7 +24,12 @@ Spring Boot migration of the legacy `Database/DatabaseDAO` layer. Exposes a full
 - MongoDB running on `localhost:27017`
 
 
-If you do not have MongoDB installed locally, you can use Docker to quickly spin up the database.
+## Atention
+
+- Rename `application.properties.example` to `application.properties`
+and add your database configuration here
+
+- If you do not have MongoDB installed locally, you can use Docker to quickly spin up the database.
 
 STEPS TO START THE DATABASE WITH DOCKER 🐋:
 ----------------------------------
@@ -99,6 +117,8 @@ com.app
 | `Comments` | `Comment` | `ModerationFlag` |
 
 ---
+
+# ⚠️ Important: Reference only (Example purposes)
 
 ## REST API Reference
 

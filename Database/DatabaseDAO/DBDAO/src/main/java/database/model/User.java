@@ -21,7 +21,7 @@ public class User {
     private Date createdAt;
     private Date lastLoginAt;
     private String passwordHash;
-
+    
     // ban fields (teacher/student)
     private ObjectId bannedBy;
     private Date bannedAt;
