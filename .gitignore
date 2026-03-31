@@ -1,0 +1,26 @@
+# ── Maven ──
+target/
+*.class
+
+# ── IntelliJ IDEA ──
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# ── Logs ──
+*.log
+logs/
+
+# ── Environment / secrets ──
+.env
+*.env
+
+# ── OS files ──
+.DS_Store
+Thumbs.db
+
+# ── Spring Boot specific ──
+application-local.properties
+application-local.yml
