@@ -141,18 +141,29 @@ public class DatabaseSeeder {
 
             ObjectId teacherId = teacherIds.get(random.nextInt(teacherIds.size()));
 
-            int lectureCount = random.nextInt(6) + 1;
+            // Free lectures (legacy / without a module): 0-2 per course
+            int freeLectureCount = random.nextInt(3);
             List<Document> lectures = new ArrayList<>();
+            for (int j = 0; j < freeLectureCount; j++) {
+                lectures.add(buildLectureDoc(faker, random, j + 1));
+            }
 
-            for (int j = 0; j < lectureCount; j++) {
-                lectures.add(new Document()
+            // Modules: 2-3 per course, each with 2-4 lectures
+            int moduleCount = random.nextInt(2) + 2;
+            List<Document> modules = new ArrayList<>();
+            for (int m = 0; m < moduleCount; m++) {
+                int lectureCount = random.nextInt(3) + 2;
+                List<Document> moduleLectures = new ArrayList<>();
+                for (int j = 0; j < lectureCount; j++) {
+                    moduleLectures.add(buildLectureDoc(faker, random, j + 1));
+                }
+                Document module = new Document()
                         .append("_id", new ObjectId())
-                        .append("title", faker.educator().course())
-                        .append("videoUrl", "https://youtube.com/watch?v=" + faker.regexify("[A-Za-z0-9]{11}"))
-                        .append("imageUrls", new ArrayList<>())
-                        .append("order", j + 1)
-                        .append("durationSecs", random.nextInt(3000) + 300)
-                        .append("publishedAt", faker.date().past(180, java.util.concurrent.TimeUnit.DAYS)));
+                        .append("title", "Module " + (m + 1) + ": " + faker.educator().course())
+                        .append("description", faker.lorem().sentence())
+                        .append("order", m + 1)
+                        .append("lectures", moduleLectures);
+                modules.add(module);
             }
 
             Document course = new Document()
@@ -167,6 +178,7 @@ public class DatabaseSeeder {
                     .append("enrollmentCount", 0)
                     .append("avgRating", 0.0)
                     .append("lectures", lectures)
+                    .append("modules", modules)
                     .append("isHidden", false)
                     .append("quizId", null)
                     .append("createdAt", faker.date().past(365, java.util.concurrent.TimeUnit.DAYS))
@@ -179,6 +191,17 @@ public class DatabaseSeeder {
                     new Document("$push", new Document("ownedCourses", courseId)));
         }
         return courseIds;
+    }
+
+    private Document buildLectureDoc(Faker faker, Random random, int order) {
+        return new Document()
+                .append("_id", new ObjectId())
+                .append("title", faker.educator().course())
+                .append("videoUrl", "https://youtube.com/watch?v=" + faker.regexify("[A-Za-z0-9]{11}"))
+                .append("imageUrls", new ArrayList<>())
+                .append("order", order)
+                .append("durationSecs", random.nextInt(3000) + 300)
+                .append("publishedAt", faker.date().past(180, java.util.concurrent.TimeUnit.DAYS));
     }
 
     public void seedQuizzes(MongoDatabase mongoDatabase, List<ObjectId> courseIds) {
@@ -291,10 +314,20 @@ public class DatabaseSeeder {
             Document course = courseCollection.find(new Document("_id", courseId)).first();
             if (course == null) continue;
 
-            List<Document> lectures = course.getList("lectures", Document.class);
-            if (lectures == null || lectures.isEmpty()) continue;
+            // Collect free lectures + lectures inside modules
+            List<Document> allLectures = new ArrayList<>();
+            List<Document> freeLectures = course.getList("lectures", Document.class);
+            if (freeLectures != null) allLectures.addAll(freeLectures);
+            List<Document> modules = course.getList("modules", Document.class);
+            if (modules != null) {
+                for (Document module : modules) {
+                    List<Document> modLectures = module.getList("lectures", Document.class);
+                    if (modLectures != null) allLectures.addAll(modLectures);
+                }
+            }
+            if (allLectures.isEmpty()) continue;
 
-            for (Document lecture : lectures) {
+            for (Document lecture : allLectures) {
                 ObjectId lectureId = lecture.getObjectId("_id");
                 int commentCount = random.nextInt(5) + 1;
                 ObjectId appropriateStudId = null;
