@@ -26,15 +26,15 @@ public class Course {
     private int enrollmentCount;
     private double avgRating;
     @Builder.Default
-    private List<Lecture> lectures = new ArrayList<>();
+    private List<CourseModule> modules = new ArrayList<>();
     private boolean isHidden;
     private ObjectId quizId;
     private Date createdAt;
     private Date updatedAt;
 
     public Document toDocument() {
-        List<Document> lectureDocs = lectures != null
-                ? lectures.stream().map(Lecture::toDocument).collect(Collectors.toList())
+        List<Document> moduleDocs = modules != null
+                ? modules.stream().map(CourseModule::toDocument).collect(Collectors.toList())
                 : new ArrayList<>();
 
         return new Document()
@@ -48,7 +48,7 @@ public class Course {
                 .append("language", language)
                 .append("enrollmentCount", enrollmentCount)
                 .append("avgRating", avgRating)
-                .append("lectures", lectureDocs)
+                .append("modules", moduleDocs)
                 .append("isHidden", isHidden)
                 .append("quizId", quizId)
                 .append("createdAt", createdAt)
@@ -58,9 +58,9 @@ public class Course {
     public static Course fromDocument(Document doc) {
         if (doc == null) return null;
 
-        List<Document> lectureDocs = doc.getList("lectures", Document.class);
-        List<Lecture> lectures = lectureDocs != null
-                ? lectureDocs.stream().map(Lecture::fromDocument).collect(Collectors.toList())
+        List<Document> moduleDocs = doc.getList("modules", Document.class);
+        List<CourseModule> modules = moduleDocs != null
+                ? moduleDocs.stream().map(CourseModule::fromDocument).collect(Collectors.toList())
                 : new ArrayList<>();
 
         return Course.builder()
@@ -75,7 +75,7 @@ public class Course {
                 .language(doc.getString("language"))
                 .enrollmentCount(doc.getInteger("enrollmentCount", 0))
                 .avgRating(doc.getDouble("avgRating") != null ? doc.getDouble("avgRating") : 0.0)
-                .lectures(lectures)
+                .modules(modules)
                 .isHidden(Boolean.TRUE.equals(doc.getBoolean("isHidden")))
                 .quizId(doc.getObjectId("quizId"))
                 .createdAt(doc.getDate("createdAt"))

@@ -3,6 +3,7 @@ package database.dao;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
+import database.model.CourseModule;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import database.model.Course;
@@ -70,10 +71,20 @@ public class CourseDAO {
         return docs.stream().map(Course::fromDocument).collect(Collectors.toList());
     }
 
+    //modificat
     public List<Lecture> findLecturesByCourseId(ObjectId courseId) {
         Course course = findById(courseId);
         if (course == null) return new ArrayList<>();
-        return course.getLectures();
+
+        List<Lecture> allLectures = new ArrayList<>();
+        if (course.getModules() != null) {
+            for (CourseModule module : course.getModules()) {
+                if (module.getLectures() != null) {
+                    allLectures.addAll(module.getLectures());
+                }
+            }
+        }
+        return allLectures;
     }
 
     // ── UPDATE ───────────────────────────────────────────────────────────────

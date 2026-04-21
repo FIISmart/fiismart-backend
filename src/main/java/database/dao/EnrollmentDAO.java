@@ -86,6 +86,30 @@ public class EnrollmentDAO {
     }
 
     /**
+     * Upsert pe element din lectureProgress.
+     * Dacă există element cu acest lectureId → înlocuiește tot documentul.
+     * Dacă nu există → face push.
+     *
+     * Documentul progress ar trebui să aibă forma:
+     * { lectureId, moduleId, watchedPercent, positionSecs, completed, updatedAt }
+     */
+    public UpdateResult upsertLectureProgress(ObjectId enrollmentId, ObjectId lectureId, Document progress) {
+        UpdateResult result = collection.updateOne(
+                and(eq("_id", enrollmentId), eq("lectureProgress.lectureId", lectureId)),
+                set("lectureProgress.$", progress)
+        );
+
+        if (result.getMatchedCount() == 0) {
+            return collection.updateOne(
+                    eq("_id", enrollmentId),
+                    push("lectureProgress", progress)
+            );
+        }
+
+        return result;
+    }
+
+    /**
      * lectureProgress document: { lectureId, watchedSecs, completed, lastWatchedAt }
      */
     public UpdateResult addLectureProgress(ObjectId enrollmentId, Document lectureProgress) {

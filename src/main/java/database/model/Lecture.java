@@ -14,6 +14,7 @@ import java.util.List;
 public class Lecture {
 
     private ObjectId id;
+    private ObjectId moduleId;
     private String title;
     private String videoUrl;
     @Builder.Default
@@ -25,6 +26,7 @@ public class Lecture {
     public Document toDocument() {
         return new Document()
                 .append("_id", id != null ? id : new ObjectId())
+                .append("moduleId", moduleId)
                 .append("title", title)
                 .append("videoUrl", videoUrl)
                 .append("imageUrls", imageUrls != null ? imageUrls : new ArrayList<>())
@@ -37,6 +39,7 @@ public class Lecture {
         if (doc == null) return null;
         return Lecture.builder()
                 .id(doc.getObjectId("_id"))
+                .moduleId(doc.getObjectId("moduleId"))
                 .title(doc.getString("title"))
                 .videoUrl(doc.getString("videoUrl"))
                 .imageUrls(doc.getList("imageUrls", String.class) != null
