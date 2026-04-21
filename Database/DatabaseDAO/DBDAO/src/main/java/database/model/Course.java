@@ -10,6 +10,11 @@ import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Course model actualizat cu suport pentru Module.
+ * Structura: Course → Module[] → Lecture[]
+ * Lecturile "libere" (fără modul) rămân în câmpul lectures pentru compatibilitate.
+ */
 @Data
 @Builder
 public class Course {
@@ -26,7 +31,9 @@ public class Course {
     private int enrollmentCount;
     private double avgRating;
     @Builder.Default
-    private List<Lecture> lectures = new ArrayList<>();
+    private List<Lecture> lectures = new ArrayList<>();   // lecturi fără modul (legacy/free)
+    @Builder.Default
+    private List<Module> modules = new ArrayList<>();     // structura modulară nouă
     private boolean isHidden;
     private ObjectId quizId;
     private Date createdAt;
@@ -35,6 +42,10 @@ public class Course {
     public Document toDocument() {
         List<Document> lectureDocs = lectures != null
                 ? lectures.stream().map(Lecture::toDocument).collect(Collectors.toList())
+                : new ArrayList<>();
+
+        List<Document> moduleDocs = modules != null
+                ? modules.stream().map(Module::toDocument).collect(Collectors.toList())
                 : new ArrayList<>();
 
         return new Document()
@@ -49,6 +60,7 @@ public class Course {
                 .append("enrollmentCount", enrollmentCount)
                 .append("avgRating", avgRating)
                 .append("lectures", lectureDocs)
+                .append("modules", moduleDocs)
                 .append("isHidden", isHidden)
                 .append("quizId", quizId)
                 .append("createdAt", createdAt)
@@ -61,6 +73,11 @@ public class Course {
         List<Document> lectureDocs = doc.getList("lectures", Document.class);
         List<Lecture> lectures = lectureDocs != null
                 ? lectureDocs.stream().map(Lecture::fromDocument).collect(Collectors.toList())
+                : new ArrayList<>();
+
+        List<Document> moduleDocs = doc.getList("modules", Document.class);
+        List<Module> modules = moduleDocs != null
+                ? moduleDocs.stream().map(Module::fromDocument).collect(Collectors.toList())
                 : new ArrayList<>();
 
         return Course.builder()
@@ -76,6 +93,7 @@ public class Course {
                 .enrollmentCount(doc.getInteger("enrollmentCount", 0))
                 .avgRating(doc.getDouble("avgRating") != null ? doc.getDouble("avgRating") : 0.0)
                 .lectures(lectures)
+                .modules(modules)
                 .isHidden(Boolean.TRUE.equals(doc.getBoolean("isHidden")))
                 .quizId(doc.getObjectId("quizId"))
                 .createdAt(doc.getDate("createdAt"))
