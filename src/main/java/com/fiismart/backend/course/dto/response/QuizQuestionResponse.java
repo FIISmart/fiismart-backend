@@ -16,6 +16,7 @@ public class QuizQuestionResponse {
     private int points;
     private List<String> options;
     private int correctIdx;
+    private String correctText;
     private String explanation;
 
     public static QuizQuestionResponse fromModel(QuizQuestion q) {
@@ -27,6 +28,7 @@ public class QuizQuestionResponse {
                 .points(q.getPoints())
                 .options(q.getOptions())
                 .correctIdx(q.getCorrectIdx())
+                .correctText(q.getCorrectText())
                 .explanation(q.getExplanation())
                 .build();
     }

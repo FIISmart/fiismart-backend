@@ -14,11 +14,12 @@ public class QuizQuestion {
 
     private ObjectId id;
     private String text;
-    private String type; // "multiple_choice"
+    private String type; // "multiple_choice" | "written"
     private int points;
     @Builder.Default
     private List<String> options = new ArrayList<>();
-    private int correctIdx;
+    private int correctIdx;        // used for multiple_choice
+    private String correctText;    // used for written (keyword-based grading)
     private String explanation;
 
     public Document toDocument() {
@@ -29,6 +30,7 @@ public class QuizQuestion {
                 .append("points", points)
                 .append("options", options != null ? options : new ArrayList<>())
                 .append("correctIdx", correctIdx)
+                .append("correctText", correctText)
                 .append("explanation", explanation);
     }
 
@@ -42,6 +44,7 @@ public class QuizQuestion {
                 .options(doc.getList("options", String.class) != null
                         ? doc.getList("options", String.class) : new ArrayList<>())
                 .correctIdx(doc.getInteger("correctIdx", 0))
+                .correctText(doc.getString("correctText"))
                 .explanation(doc.getString("explanation"))
                 .build();
     }

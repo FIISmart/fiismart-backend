@@ -153,8 +153,9 @@ public class QuizService {
                 .text(req.getText())
                 .type(req.getType())
                 .points(req.getPoints())
-                .options(req.getOptions())
+                .options(req.getOptions() != null ? req.getOptions() : new java.util.ArrayList<>())
                 .correctIdx(req.getCorrectIdx())
+                .correctText(req.getCorrectText())
                 .explanation(req.getExplanation())
                 .build();
     }
