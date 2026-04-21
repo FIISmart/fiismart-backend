@@ -78,6 +78,62 @@ public class QuizService {
         courseDAO.updateUpdatedAt(cid, new Date());
     }
 
+    // ── MODULE-SCOPED QUIZ ───────────────────────────────────────────────────
+
+    /** Creates or replaces the quiz attached to a specific module. */
+    public QuizResponse createOrUpdateModuleQuiz(String courseId, String moduleId, CreateQuizRequest req) {
+        ObjectId cid = toObjectId(courseId, "Invalid course ID");
+        ObjectId mid = toObjectId(moduleId, "Invalid module ID");
+
+        database.model.Course course = courseDAO.findById(cid);
+        if (course == null) throw new ResourceNotFoundException("Course not found: " + courseId);
+
+        boolean moduleExists = course.getModules() != null &&
+                course.getModules().stream().anyMatch(m -> mid.equals(m.getId()));
+        if (!moduleExists) throw new ResourceNotFoundException("Module not found: " + moduleId);
+
+        if (quizDAO.existsByModuleId(mid)) {
+            quizDAO.deleteByModuleId(mid);
+        }
+
+        List<QuizQuestion> questions = req.getQuestions().stream()
+                .map(this::toQuizQuestion)
+                .collect(Collectors.toList());
+
+        Quiz quiz = Quiz.builder()
+                .id(new ObjectId())
+                .courseId(cid)
+                .moduleId(mid)
+                .title(req.getTitle())
+                .passingScore(req.getPassingScore())
+                .timeLimit(req.getTimeLimit())
+                .shuffleQuestions(req.isShuffleQuestions())
+                .questions(questions)
+                .build();
+
+        quizDAO.insert(quiz);
+        courseDAO.updateUpdatedAt(cid, new Date());
+        return QuizResponse.fromModel(quiz);
+    }
+
+    public QuizResponse getQuizByModuleId(String courseId, String moduleId) {
+        toObjectId(courseId, "Invalid course ID");
+        ObjectId mid = toObjectId(moduleId, "Invalid module ID");
+        Quiz quiz = quizDAO.findByModuleId(mid);
+        if (quiz == null) throw new ResourceNotFoundException("Quiz not found for module: " + moduleId);
+        return QuizResponse.fromModel(quiz);
+    }
+
+    public void deleteModuleQuiz(String courseId, String moduleId) {
+        ObjectId cid = toObjectId(courseId, "Invalid course ID");
+        ObjectId mid = toObjectId(moduleId, "Invalid module ID");
+        if (!quizDAO.existsByModuleId(mid)) {
+            throw new ResourceNotFoundException("Quiz not found for module: " + moduleId);
+        }
+        quizDAO.deleteByModuleId(mid);
+        courseDAO.updateUpdatedAt(cid, new Date());
+    }
+
     /**
      * Adaugă o singură întrebare la quiz-ul existent.
      */

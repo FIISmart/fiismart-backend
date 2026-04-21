@@ -2,11 +2,14 @@ package com.fiismart.backend.course.controller;
 
 import com.fiismart.backend.course.dto.request.CreateLectureRequest;
 import com.fiismart.backend.course.dto.request.CreateModuleRequest;
+import com.fiismart.backend.course.dto.request.CreateQuizRequest;
 import com.fiismart.backend.course.dto.request.UpdateLectureRequest;
 import com.fiismart.backend.course.dto.response.LectureResponse;
 import com.fiismart.backend.course.dto.response.ModuleResponse;
+import com.fiismart.backend.course.dto.response.QuizResponse;
 import com.fiismart.backend.course.service.LectureService;
 import com.fiismart.backend.course.service.ModuleService;
+import com.fiismart.backend.course.service.QuizService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,10 +31,14 @@ public class CourseBuilderController {
 
     private final ModuleService moduleService;
     private final LectureService lectureService;
+    private final QuizService quizService;
 
-    public CourseBuilderController(ModuleService moduleService, LectureService lectureService) {
+    public CourseBuilderController(ModuleService moduleService,
+                                   LectureService lectureService,
+                                   QuizService quizService) {
         this.moduleService = moduleService;
         this.lectureService = lectureService;
+        this.quizService = quizService;
     }
 
     /** GET /api/courses/{courseId}/builder/modules */
@@ -154,6 +161,36 @@ public class CourseBuilderController {
             @PathVariable String courseId,
             @PathVariable String lectureId) {
         lectureService.removeLectureFromCourse(courseId, lectureId);
+        return ResponseEntity.noContent().build();
+    }
+
+
+    // ── Module-scoped quiz ─────────────────────────────────────────────────
+
+    /** GET /api/courses/{courseId}/builder/modules/{moduleId}/quiz */
+    @GetMapping("/modules/{moduleId}/quiz")
+    public ResponseEntity<QuizResponse> getModuleQuiz(
+            @PathVariable String courseId,
+            @PathVariable String moduleId) {
+        return ResponseEntity.ok(quizService.getQuizByModuleId(courseId, moduleId));
+    }
+
+    /** POST /api/courses/{courseId}/builder/modules/{moduleId}/quiz */
+    @PostMapping("/modules/{moduleId}/quiz")
+    public ResponseEntity<QuizResponse> createOrUpdateModuleQuiz(
+            @PathVariable String courseId,
+            @PathVariable String moduleId,
+            @Valid @RequestBody CreateQuizRequest req) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(quizService.createOrUpdateModuleQuiz(courseId, moduleId, req));
+    }
+
+    /** DELETE /api/courses/{courseId}/builder/modules/{moduleId}/quiz */
+    @DeleteMapping("/modules/{moduleId}/quiz")
+    public ResponseEntity<Void> deleteModuleQuiz(
+            @PathVariable String courseId,
+            @PathVariable String moduleId) {
+        quizService.deleteModuleQuiz(courseId, moduleId);
         return ResponseEntity.noContent().build();
     }
 }

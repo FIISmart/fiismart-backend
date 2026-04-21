@@ -13,6 +13,7 @@ public class QuizResponse {
 
     private String id;
     private String courseId;
+    private String moduleId;   // null for legacy course-wide quizzes
     private String title;
     private int passingScore;
     private int timeLimit;
@@ -24,6 +25,7 @@ public class QuizResponse {
         return QuizResponse.builder()
                 .id(quiz.getId() != null ? quiz.getId().toHexString() : null)
                 .courseId(quiz.getCourseId() != null ? quiz.getCourseId().toHexString() : null)
+                .moduleId(quiz.getModuleId() != null ? quiz.getModuleId().toHexString() : null)
                 .title(quiz.getTitle())
                 .passingScore(quiz.getPassingScore())
                 .timeLimit(quiz.getTimeLimit())
