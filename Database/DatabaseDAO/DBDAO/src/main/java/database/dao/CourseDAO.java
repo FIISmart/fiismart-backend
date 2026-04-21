@@ -7,6 +7,7 @@ import org.bson.Document;
 import org.bson.types.ObjectId;
 import database.model.Course;
 import database.model.Lecture;
+import database.model.Module;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -76,6 +77,12 @@ public class CourseDAO {
         return course.getLectures();
     }
 
+    public List<Module> findModulesByCourseId(ObjectId courseId) {
+        Course course = findById(courseId);
+        if (course == null) return new ArrayList<>();
+        return course.getModules();
+    }
+
     // ── UPDATE ───────────────────────────────────────────────────────────────
 
     public UpdateResult updateTitle(ObjectId courseId, String newTitle) {
@@ -114,7 +121,7 @@ public class CourseDAO {
         return collection.updateOne(eq("_id", courseId), set("updatedAt", updatedAt));
     }
 
-    // ── LECTURE MANAGEMENT ──────────────────────────────────────────────────
+    // ── LECTURE MANAGEMENT (lecturi libere, fără modul) ──────────────────────
 
     public UpdateResult addLecture(ObjectId courseId, Lecture lecture) {
         return collection.updateOne(eq("_id", courseId), push("lectures", lecture.toDocument()));
@@ -125,11 +132,63 @@ public class CourseDAO {
                 pull("lectures", new Document("_id", lectureId)));
     }
 
-    /** Actualizează un câmp dintr-o lectură folosind operatorul pozițional $ */
     public UpdateResult updateLectureField(ObjectId courseId, ObjectId lectureId, String field, Object value) {
         return collection.updateOne(
                 and(eq("_id", courseId), eq("lectures._id", lectureId)),
                 set("lectures.$." + field, value)
+        );
+    }
+
+    // ── MODULE MANAGEMENT ────────────────────────────────────────────────────
+
+    /**
+     * Adaugă un modul nou la curs.
+     */
+    public UpdateResult addModule(ObjectId courseId, Module module) {
+        return collection.updateOne(eq("_id", courseId),
+                push("modules", module.toDocument()));
+    }
+
+    /**
+     * Elimină un modul (și lecturile din el) din curs.
+     */
+    public UpdateResult removeModule(ObjectId courseId, ObjectId moduleId) {
+        return collection.updateOne(eq("_id", courseId),
+                pull("modules", new Document("_id", moduleId)));
+    }
+
+    /**
+     * Actualizează un câmp al unui modul (ex: title, description, order).
+     */
+    public UpdateResult updateModuleField(ObjectId courseId, ObjectId moduleId, String field, Object value) {
+        return collection.updateOne(
+                and(eq("_id", courseId), eq("modules._id", moduleId)),
+                set("modules.$." + field, value)
+        );
+    }
+
+    /**
+     * Înlocuiește complet lista de module (folosit la reordonare drag & drop).
+     */
+    public UpdateResult replaceModules(ObjectId courseId, List<Module> modules) {
+        List<Document> moduleDocs = modules.stream()
+                .map(Module::toDocument)
+                .collect(Collectors.toList());
+        return collection.updateOne(eq("_id", courseId), set("modules", moduleDocs));
+    }
+
+    // ── LECTURE MANAGEMENT ÎN MODUL ──────────────────────────────────────────
+    // Notă: MongoDB nu suportă filtrare pe array nested cu operatorul pozițional simplu $
+    // pentru structuri array-in-array. Folosim replace complet al modulului.
+
+    /**
+     * Înlocuiește complet un modul (pentru a actualiza lecturile din el).
+     * Folosit când adaugi/ștergi/reordonezi lecturi în modul.
+     */
+    public UpdateResult replaceModule(ObjectId courseId, Module updatedModule) {
+        return collection.updateOne(
+                and(eq("_id", courseId), eq("modules._id", updatedModule.getId())),
+                set("modules.$", updatedModule.toDocument())
         );
     }
 
