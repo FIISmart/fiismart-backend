@@ -5,8 +5,10 @@ import com.fiismart.backend.course.dto.response.ModuleResponse;
 import com.fiismart.backend.course.exception.BadRequestException;
 import com.fiismart.backend.course.exception.ResourceNotFoundException;
 import database.dao.CourseDAO;
+import database.dao.QuizDAO;
 import database.model.Course;
 import database.model.Module;
+import database.model.Quiz;
 import org.bson.types.ObjectId;
 import org.springframework.stereotype.Service;
 
@@ -19,9 +21,11 @@ import java.util.stream.Collectors;
 public class ModuleService {
 
     private final CourseDAO courseDAO;
+    private final QuizDAO quizDAO;
 
-    public ModuleService(CourseDAO courseDAO) {
+    public ModuleService(CourseDAO courseDAO, QuizDAO quizDAO) {
         this.courseDAO = courseDAO;
+        this.quizDAO = quizDAO;
     }
 
     /**
@@ -54,7 +58,7 @@ public class ModuleService {
         Course course = getCourseOrThrow(cid, courseId);
         return course.getModules().stream()
                 .sorted((a, b) -> Integer.compare(a.getOrder(), b.getOrder()))
-                .map(ModuleResponse::fromModel)
+                .map(m -> ModuleResponse.fromModel(m, quizDAO.findByModuleId(m.getId())))
                 .collect(Collectors.toList());
     }
 

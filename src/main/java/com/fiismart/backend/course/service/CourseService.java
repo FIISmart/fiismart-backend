@@ -3,11 +3,15 @@ package com.fiismart.backend.course.service;
 import com.fiismart.backend.course.dto.request.CreateCourseRequest;
 import com.fiismart.backend.course.dto.request.UpdateCourseRequest;
 import com.fiismart.backend.course.dto.response.CourseResponse;
+import com.fiismart.backend.course.dto.response.ModuleResponse;
+import com.fiismart.backend.course.dto.response.QuizResponse;
 import com.fiismart.backend.course.exception.BadRequestException;
 import com.fiismart.backend.course.exception.ResourceNotFoundException;
 import com.fiismart.backend.course.helper.CourseUpdateHelper;
 import database.dao.CourseDAO;
+import database.dao.QuizDAO;
 import database.model.Course;
+import database.model.Quiz;
 import org.bson.types.ObjectId;
 import org.springframework.stereotype.Service;
 
@@ -21,10 +25,28 @@ public class CourseService {
 
     private final CourseDAO courseDAO;
     private final CourseUpdateHelper courseUpdateHelper;
+    private final QuizDAO quizDAO;
 
-    public CourseService(CourseDAO courseDAO, CourseUpdateHelper courseUpdateHelper) {
+    public CourseService(CourseDAO courseDAO, CourseUpdateHelper courseUpdateHelper, QuizDAO quizDAO) {
         this.courseDAO = courseDAO;
         this.courseUpdateHelper = courseUpdateHelper;
+        this.quizDAO = quizDAO;
+    }
+
+    /**
+     * Build a CourseResponse and populate each module's quiz field from the Quiz
+     * collection so clients that only call /api/courses/{id} still see the module
+     * quizzes without a second round-trip.
+     */
+    private CourseResponse buildCourseResponse(Course course) {
+        CourseResponse res = CourseResponse.fromModel(course);
+        if (res.getModules() == null || res.getModules().isEmpty()) return res;
+        for (ModuleResponse m : res.getModules()) {
+            if (m.getId() == null) continue;
+            Quiz q = quizDAO.findByModuleId(new ObjectId(m.getId()));
+            if (q != null) m.setQuiz(QuizResponse.fromModel(q));
+        }
+        return res;
     }
 
     public CourseResponse createCourse(CreateCourseRequest req) {
@@ -57,19 +79,19 @@ public class CourseService {
         if (course == null) {
             throw new ResourceNotFoundException("Course not found: " + id);
         }
-        return CourseResponse.fromModel(course);
+        return buildCourseResponse(course);
     }
 
     public List<CourseResponse> getCoursesByTeacherId(String teacherId) {
         ObjectId tid = toObjectId(teacherId, "Invalid teacher ID");
         return courseDAO.findByTeacherId(tid).stream()
-                .map(CourseResponse::fromModel)
+                .map(this::buildCourseResponse)
                 .collect(Collectors.toList());
     }
 
     public List<CourseResponse> getPublishedCourses() {
         return courseDAO.findPublishedVisible().stream()
-                .map(CourseResponse::fromModel)
+                .map(this::buildCourseResponse)
                 .collect(Collectors.toList());
     }
 
@@ -97,7 +119,7 @@ public class CourseService {
         }
         courseDAO.updateUpdatedAt(courseId, new Date());
 
-        return CourseResponse.fromModel(courseDAO.findById(courseId));
+        return buildCourseResponse(courseDAO.findById(courseId));
     }
 
     public CourseResponse publishCourse(String id) {
@@ -108,7 +130,7 @@ public class CourseService {
         }
         courseDAO.updateStatus(courseId, "published");
         courseDAO.updateUpdatedAt(courseId, new Date());
-        return CourseResponse.fromModel(courseDAO.findById(courseId));
+        return buildCourseResponse(courseDAO.findById(courseId));
     }
 
     public CourseResponse draftCourse(String id) {
@@ -119,7 +141,7 @@ public class CourseService {
         }
         courseDAO.updateStatus(courseId, "draft");
         courseDAO.updateUpdatedAt(courseId, new Date());
-        return CourseResponse.fromModel(courseDAO.findById(courseId));
+        return buildCourseResponse(courseDAO.findById(courseId));
     }
 
     public void deleteCourse(String id) {
