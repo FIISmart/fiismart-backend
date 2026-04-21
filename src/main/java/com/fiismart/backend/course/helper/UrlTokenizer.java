@@ -25,12 +25,23 @@ public class UrlTokenizer {
 
     /**
      * Normalizează un videoUrl.
-     * Returnează URL-ul embed-able sau URL-ul original dacă nu e YouTube/Vimeo.
+     *
+     * Regula:
+     *  - null/blank → null
+     *  - pare URL (http/https) → normalizează YouTube/Vimeo, validează altfel
+     *  - orice altceva (markdown inline, text) → pass-through. Câmpul `videoUrl`
+     *    este folosit de FE și pentru conținut markdown de lecție, nu doar
+     *    pentru URL-uri media.
      */
     public String tokenizeVideoUrl(String rawUrl) {
         if (rawUrl == null || rawUrl.isBlank()) return null;
 
         String trimmed = rawUrl.trim();
+
+        if (!looksLikeUrl(trimmed)) {
+            // Conținut inline (ex: markdown) — stochează ca atare.
+            return trimmed;
+        }
 
         // YouTube
         String youtubeId = extractYoutubeId(trimmed);
@@ -49,6 +60,10 @@ public class UrlTokenizer {
         return trimmed;
     }
 
+    private boolean looksLikeUrl(String s) {
+        return s.startsWith("http://") || s.startsWith("https://");
+    }
+
 
     /**
      * Sanitizează o listă de imageUrl-uri.
@@ -58,11 +73,8 @@ public class UrlTokenizer {
         if (rawUrls == null) return List.of();
         return rawUrls.stream()
                 .filter(u -> u != null && !u.isBlank())
-                .map(u -> {
-                    String trimmed = u.trim();
-                    validateUrl(trimmed);
-                    return trimmed;
-                })
+                .map(String::trim)
+                .filter(this::looksLikeUrl)
                 .collect(Collectors.toList());
     }
 
