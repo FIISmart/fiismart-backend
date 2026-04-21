@@ -26,7 +26,8 @@ public class CourseResponse {
     private String quizId;
     private Date createdAt;
     private Date updatedAt;
-    private List<LectureResponse> lectures;
+    private List<LectureResponse> lectures;   // lecturi fără modul
+    private List<ModuleResponse> modules;     // structura modulară
 
     public static CourseResponse fromModel(Course course) {
         if (course == null) return null;
@@ -46,7 +47,14 @@ public class CourseResponse {
                 .createdAt(course.getCreatedAt())
                 .updatedAt(course.getUpdatedAt())
                 .lectures(course.getLectures() != null
-                        ? course.getLectures().stream().map(LectureResponse::fromModel).collect(Collectors.toList())
+                        ? course.getLectures().stream()
+                        .map(LectureResponse::fromModel)
+                        .collect(Collectors.toList())
+                        : List.of())
+                .modules(course.getModules() != null
+                        ? course.getModules().stream()
+                        .map(ModuleResponse::fromModel)
+                        .collect(Collectors.toList())
                         : List.of())
                 .build();
     }
