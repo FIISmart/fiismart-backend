@@ -45,6 +45,18 @@ public class QuizDAO {
         return Quiz.fromDocument(collection.find(eq("courseId", courseId)).first());
     }
 
+    public Quiz findByModuleId(ObjectId moduleId) {
+        return Quiz.fromDocument(collection.find(eq("moduleId", moduleId)).first());
+    }
+
+    public boolean existsByModuleId(ObjectId moduleId) {
+        return collection.countDocuments(eq("moduleId", moduleId)) > 0;
+    }
+
+    public com.mongodb.client.result.DeleteResult deleteByModuleId(ObjectId moduleId) {
+        return collection.deleteOne(eq("moduleId", moduleId));
+    }
+
     public List<QuizQuestion> findQuestions(ObjectId quizId) {
         Quiz quiz = findById(quizId);
         if (quiz == null) return new ArrayList<>();

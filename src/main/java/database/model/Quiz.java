@@ -15,6 +15,7 @@ public class Quiz {
 
     private ObjectId id;
     private ObjectId courseId;
+    private ObjectId moduleId;   // nullable — null = legacy course-wide quiz
     private String title;
     private int passingScore;
     private int timeLimit;
@@ -30,6 +31,7 @@ public class Quiz {
         return new Document()
                 .append("_id", id != null ? id : new ObjectId())
                 .append("courseId", courseId)
+                .append("moduleId", moduleId)
                 .append("title", title)
                 .append("passingScore", passingScore)
                 .append("timeLimit", timeLimit)
@@ -48,6 +50,7 @@ public class Quiz {
         return Quiz.builder()
                 .id(doc.getObjectId("_id"))
                 .courseId(doc.getObjectId("courseId"))
+                .moduleId(doc.getObjectId("moduleId"))
                 .title(doc.getString("title"))
                 .passingScore(doc.getInteger("passingScore", 70))
                 .timeLimit(doc.getInteger("timeLimit", 30))
