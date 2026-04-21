@@ -21,9 +21,16 @@ public class CommentResponse {
     private String parentCommentId;
     private int likeCount;
     private int flagCount;
+    /** Derived from moderation state: rejected / pending / approved. */
+    private String status;
 
     public static CommentResponse fromModel(Comment comment) {
         if (comment == null) return null;
+        String status;
+        if (comment.isDeleted()) status = "rejected";
+        else if (comment.getFlagCount() > 0) status = "pending";
+        else status = "approved";
+
         return CommentResponse.builder()
                 .id(comment.getId() != null ? comment.getId().toHexString() : null)
                 .lectureId(comment.getLectureId() != null ? comment.getLectureId().toHexString() : null)
@@ -36,6 +43,7 @@ public class CommentResponse {
                 .parentCommentId(comment.getParentCommentId() != null ? comment.getParentCommentId().toHexString() : null)
                 .likeCount(comment.getLikeCount())
                 .flagCount(comment.getFlagCount())
+                .status(status)
                 .build();
     }
 }

@@ -25,7 +25,8 @@ public class CommentService {
 
     public List<CommentResponse> getCommentsByCourseId(String courseId) {
         ObjectId cid = toObjectId(courseId, "Invalid course ID");
-        return commentQueryHelper.findByCourseId(cid).stream()
+        // Include rejected (deleted) comments — the moderation UI has a Rejected tab.
+        return commentQueryHelper.findAllByCourseId(cid).stream()
                 .map(CommentResponse::fromModel)
                 .collect(Collectors.toList());
     }
@@ -38,9 +39,9 @@ public class CommentService {
         }
 
         switch (status) {
-            case "approved" -> commentDAO.clearModerationFlags(cid);
-            case "rejected" -> commentDAO.softDelete(cid);
-            case "pending" -> commentDAO.clearModerationFlags(cid);
+            case "approved" -> commentQueryHelper.markApproved(cid);
+            case "rejected" -> commentQueryHelper.markRejected(cid);
+            case "pending" -> commentQueryHelper.markPending(cid);
             default -> throw new BadRequestException("Invalid status: " + status + ". Must be approved, rejected, or pending");
         }
     }
