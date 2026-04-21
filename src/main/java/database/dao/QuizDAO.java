@@ -1,3 +1,6 @@
+// ─────────────────────────────────────────────────────────────────
+// FILE: database/dao/QuizDAO.java  (actualizat cu replaceQuestions)
+// ─────────────────────────────────────────────────────────────────
 package database.dao;
 
 import com.mongodb.client.MongoCollection;
@@ -82,6 +85,13 @@ public class QuizDAO {
                 and(eq("_id", quizId), eq("questions._id", questionId)),
                 set("questions.$." + field, value)
         );
+    }
+
+    /**
+     * Înlocuiește complet lista de întrebări (folosit la reordonare drag & drop).
+     */
+    public UpdateResult replaceQuestions(ObjectId quizId, List<Document> questionDocs) {
+        return collection.updateOne(eq("_id", quizId), set("questions", questionDocs));
     }
 
     // ── DELETE ───────────────────────────────────────────────────────────────
