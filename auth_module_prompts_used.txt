@@ -1,0 +1,202 @@
+Prompt #1:
+I built a frontend that uses a backend written in spring boot. Currently all the auth flow is self made in spring boot 
+and I want to migrate to AWS Cognito, I will still use Spring Boot for the backend of my app but I think using Cognito 
+for autentification and authorization will make my life much easier. I configured a User Group and an App Client in AWS 
+and now I need to build the Spring Boot part (the backend) which interacts with Cognito to autentificate a user and request 
+a JWT token to be used in the future to interact with the app and update the frontend to use this backend. Can you help me 
+learn how would I do it? Let's start gradually, first build the backend and then update the frontend. I gave you the frontend 
+for context to see what data I collect at login/register
+
+Prompt #2:
+let's circle back a bit because there are a lot of changes to make to my colleagues work. Lets just build 2 things step by
+step: a package that has all the models and classes to work with the Mongo regarding the Users (the persistence/data layer)
+and a package for the auth which handles all the auth things. Help me first to find what do I need to make in each package
+(DTOs, Mappers, Repositories, Controllers, etc.)
+
+Prompt #3:
+Analizează acest cod de test JUnit și identifică logicile care se repetă în mai multe metode @Test. Refactorizează codul prin extragerea
+acestor repetiții în metode utilitare private sau într-o clasă de bază, astfel încât corpul testelor să rămână concentrat doar pe scenariul testat,
+nu pe construcția obiectelor.
+
+
+
+
+
+
+
+Prompt #4:
+what policy is needed for the AWS account that I use to run the backend, it only has read permissions on Cognito. Also here are the logs when I went to make an account:
+2026-04-18T19:13:06.962+03:00
+ INFO
+27988
+--- [nio-8080-exec-1] 
+o.a.c.c.C.[Tomcat].[localhost].[/]      
+:
+ Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-18T19:13:06.963+03:00
+ INFO
+27988
+--- [nio-8080-exec-1] 
+o.s.web.servlet.DispatcherServlet       
+:
+ Initializing Servlet 'dispatcherServlet'
+2026-04-18T19:13:06.963+03:00
+DEBUG
+27988
+--- [nio-8080-exec-1] 
+o.s.web.servlet.DispatcherServlet       
+:
+ Detected StandardServletMultipartResolver
+2026-04-18T19:13:06.963+03:00
+DEBUG
+27988
+--- [nio-8080-exec-1] 
+o.s.web.servlet.DispatcherServlet       
+:
+ Detected AcceptHeaderLocaleResolver
+2026-04-18T19:13:06.969+03:00
+DEBUG
+27988
+--- [nio-8080-exec-1] 
+o.s.web.servlet.DispatcherServlet       
+:
+ Detected org.springframework.web.servlet.view.DefaultRequestToViewNameTranslator@25f0e12f
+2026-04-18T19:13:06.969+03:00
+DEBUG
+27988
+--- [nio-8080-exec-1] 
+o.s.web.servlet.DispatcherServlet       
+:
+ Detected org.springframework.web.servlet.support.SessionFlashMapManager@28cfcee7
+2026-04-18T19:13:06.970+03:00
+DEBUG
+27988
+--- [nio-8080-exec-1] 
+o.s.web.servlet.DispatcherServlet       
+:
+ enableLoggingRequestDetails='false': request parameters and headers will be masked to prevent unsafe logging of potentially sensitive data
+2026-04-18T19:13:06.970+03:00
+ INFO
+27988
+--- [nio-8080-exec-1] 
+o.s.web.servlet.DispatcherServlet       
+:
+ Completed initialization in 7 ms
+2026-04-18T19:13:07.001+03:00
+DEBUG
+27988
+--- [nio-8080-exec-1] 
+o.s.web.servlet.DispatcherServlet       
+:
+ POST "/api/auth/register", parameters={}
+2026-04-18T19:13:07.006+03:00
+DEBUG
+27988
+--- [nio-8080-exec-1] 
+s.w.s.m.m.a.RequestMappingHandlerMapping
+:
+ Mapped to com.fiismart.auth.controller.AuthController#register(RegisterRequest)
+2026-04-18T19:13:07.057+03:00
+DEBUG
+27988
+--- [nio-8080-exec-1] 
+m.m.a.RequestResponseBodyMethodProcessor
+:
+ Read "application/json;charset=UTF-8" to [RegisterRequest(firstName=Robi, lastName=Robita, email=robertczeran@gmail.com, password=Robietare123 (truncated)...]
+2026-04-18T19:13:07.654+03:00
+DEBUG
+27988
+--- [nio-8080-exec-1] 
+.m.m.a.ExceptionHandlerExceptionResolver
+:
+ Using @ExceptionHandler com.fiismart.auth.exception.CognitoExceptionHandler#handleNotAuthorized(NotAuthorizedException)
+2026-04-18T19:13:07.658+03:00
+DEBUG
+27988
+--- [nio-8080-exec-1] 
+o.s.w.s.m.m.a.HttpEntityMethodProcessor 
+:
+ Using 'application/json', given [*/*] and supported [application/json, application/*+json]
+2026-04-18T19:13:07.659+03:00
+DEBUG
+27988
+--- [nio-8080-exec-1] 
+o.s.w.s.m.m.a.HttpEntityMethodProcessor 
+:
+ Writing [{message=Invalid email or password, success=false}]
+2026-04-18T19:13:07.674+03:00
+DEBUG
+27988
+--- [nio-8080-exec-1] 
+.m.m.a.ExceptionHandlerExceptionResolver
+:
+ Resolved [software.amazon.awssdk.services.cognitoidentityprovider.model.NotAuthorizedException: Client 3vpkkk13bkdcff135og9jl7vp9 is configured with secret but SECRET_HASH was not received (Service: CognitoIdentityProvider, Status Code: 400, Request ID: 77e9ac14-5a7f-4514-8d3a-ed58c67a23f0)]
+2026-04-18T19:13:07.675+03:00
+DEBUG
+27988
+--- [nio-8080-exec-1] 
+o.s.web.servlet.DispatcherServlet       
+:
+ Completed 401 UNAUTHORIZED
+
+
+
+
+
+
+
+Prompt #5:
+in the backend I see this so it;s all good but the frontend just tells me "The string did not match the expected pattern".
+backend message:
+POST "/api/auth/forgot-password", parameters={}
+2026-04-18T23:08:48.211+03:00
+DEBUG
+35096
+--- [nio-8080-exec-6] 
+s.w.s.m.m.a.RequestMappingHandlerMapping
+:
+ Mapped to com.fiismart.auth.controller.AuthController#forgotPassword(ForgotPasswordRequest)
+2026-04-18T23:08:48.228+03:00
+DEBUG
+35096
+--- [nio-8080-exec-6] 
+m.m.a.RequestResponseBodyMethodProcessor
+:
+ Read "application/json;charset=UTF-8" to [ForgotPasswordRequest(email=testmail@gmail.com)]
+2026-04-18T23:08:48.635+03:00
+DEBUG
+35096
+--- [nio-8080-exec-6] 
+o.s.w.s.m.m.a.HttpEntityMethodProcessor 
+:
+ Using 'application/json', given [*/*] and supported [application/json, application/*+json]
+2026-04-18T23:08:48.636+03:00
+DEBUG
+35096
+--- [nio-8080-exec-6] 
+o.s.w.s.m.m.a.HttpEntityMethodProcessor 
+:
+ Nothing to write: null body
+2026-04-18T23:08:48.636+03:00
+DEBUG
+35096
+--- [nio-8080-exec-6] 
+o.s.web.servlet.DispatcherServlet       
+:
+Completed 200 OK
+
+
+
+
+
+
+
+Prompt #6:
+
+Hello :3
+
+I got these two new pages I've done for an app me and my group in college need to develop. I'm in the frontend team, and my section of the group was
+tasked with developing the log-in/sign-up/change-password. For now, I had the task of adding two pages: the TOS and a Privacy Policy. Attached in this message
+is a .zip with the files necessary for you to evaluate, since what I want you to do is the following:
+
+Look through both of the pages from both a functional web-page perspective, and a legal one, and tell me if you spot anything wrong 
