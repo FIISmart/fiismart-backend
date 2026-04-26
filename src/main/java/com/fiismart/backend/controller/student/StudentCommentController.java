@@ -22,8 +22,9 @@ public class StudentCommentController {
     public List<StudentCommentDTO> getComments(
             @PathVariable String studentId,
             @PathVariable String courseId,
-            @PathVariable String lectureId) {
-        return commentService.getCommentsThreaded(studentId, lectureId);
+            @PathVariable String lectureId,
+            @RequestParam(defaultValue = "recent") String sortBy) {
+        return commentService.getCommentsThreaded(studentId, lectureId, sortBy);
     }
 
     @PostMapping("/courses/{courseId}/lectures/{lectureId}/comments")

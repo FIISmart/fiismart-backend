@@ -24,7 +24,7 @@ public class StudentCommentService {
         this.userDAO = new UserDAO();
     }
 
-    public List<StudentCommentDTO> getCommentsThreaded(String studentIdHex, String lectureIdHex) {
+    public List<StudentCommentDTO> getCommentsThreaded(String studentIdHex, String lectureIdHex, String sortBy) {
         ObjectId lectureId = new ObjectId(lectureIdHex);
         ObjectId studentId = new ObjectId(studentIdHex);
 
@@ -55,7 +55,12 @@ public class StudentCommentService {
             }
         }
 
-        topLevelComments.sort((a, b) -> Integer.compare(b.getLikeCount(), a.getLikeCount()));
+        switch (sortBy) {
+            case "popular" -> topLevelComments.sort((a, b) -> Integer.compare(b.getLikeCount(), a.getLikeCount()));
+            case "oldest" -> topLevelComments.sort(Comparator.comparing(StudentCommentDTO::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
+            case "recent" -> topLevelComments.sort(Comparator.comparing(StudentCommentDTO::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())));
+            default -> topLevelComments.sort(Comparator.comparing(StudentCommentDTO::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())));
+        }
 
         return topLevelComments;
     }
@@ -142,6 +147,7 @@ public class StudentCommentService {
                 .timeAgo(getTimeAgo(comment.getCreatedAt()))
                 .isLikedByMe(isLiked)
                 .replies(new ArrayList<>())
+                .createdAt(comment.getCreatedAt())
                 .build();
     }
 

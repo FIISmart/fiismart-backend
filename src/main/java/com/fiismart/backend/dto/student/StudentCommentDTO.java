@@ -3,6 +3,7 @@ package com.fiismart.backend.dto.student;
 import lombok.Builder;
 import lombok.Data;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 @Data
@@ -16,6 +17,7 @@ public class StudentCommentDTO {
     private int likeCount;
     private String timeAgo;
     private boolean isLikedByMe;
+    private Date createdAt;
 
     @Builder.Default
     private List<StudentCommentDTO> replies = new ArrayList<>();
