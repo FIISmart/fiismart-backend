@@ -5,4 +5,5 @@ import lombok.Data;
 @Data
 public class CommentCreateRequest {
     private String body;
+    private Integer videoTimestamp;
 }

@@ -28,6 +28,7 @@ public class Comment {
     @Builder.Default
     private List<Document> moderationFlags = new ArrayList<>();
     private int flagCount;
+    private Integer videoTimestamp;
 
     public Document toDocument() {
         return new Document()
@@ -43,7 +44,8 @@ public class Comment {
                 .append("likeCount", likeCount)
                 .append("likedBy", likedBy != null ? likedBy : new ArrayList<>())
                 .append("moderationFlags", moderationFlags != null ? moderationFlags : new ArrayList<>())
-                .append("flagCount", flagCount);
+                .append("flagCount", flagCount)
+                .append("videoTimestamp", videoTimestamp);
     }
 
     public static Comment fromDocument(Document doc) {
@@ -64,6 +66,7 @@ public class Comment {
                 .moderationFlags(doc.getList("moderationFlags", Document.class) != null
                         ? doc.getList("moderationFlags", Document.class) : new ArrayList<>())
                 .flagCount(doc.getInteger("flagCount", 0))
+                .videoTimestamp(doc.getInteger("videoTimestamp"))
                 .build();
     }
 }

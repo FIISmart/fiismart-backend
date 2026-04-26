@@ -12,6 +12,7 @@ public class StudentCommentDTO {
     private String authorName;
     private String authorRole;
     private String body;
+    private Integer videoTimestamp;
     private int likeCount;
     private String timeAgo;
     private boolean isLikedByMe;

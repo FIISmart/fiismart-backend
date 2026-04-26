@@ -165,8 +165,8 @@ public class StudentLectureService {
             positionSecs = lecture.getDurationSecs();
         }
 
-        // 5. Backend forțează regula: completed == (watchedPercent == 100)
-        boolean completed = (watchedPercent == 100);
+        // 5. Backend forțează regula: completed == (watchedPercent >= 100)
+        boolean completed = (watchedPercent >= 95);
 
         // 6. Construim documentul de progres (include moduleId)
         Date now = new Date();
