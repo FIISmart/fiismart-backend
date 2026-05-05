@@ -12,7 +12,6 @@ target/
 *.iml
 
 application.properties
-.env
 
 # OS
 .DS_Store

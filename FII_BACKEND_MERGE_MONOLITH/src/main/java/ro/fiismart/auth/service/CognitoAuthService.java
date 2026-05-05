@@ -167,9 +167,11 @@ public class CognitoAuthService {
                     .build());
             log.info("Utilizator {} adăugat în grupul Cognito: {}", req.getEmail(), groupName);
         } catch (software.amazon.awssdk.core.exception.SdkClientException credEx) {
-            log.debug("adminAddUserToGroup ignorat — credențiale AWS lipsă în mediul local: {}", credEx.getMessage());
+            log.error("[GRUP] Credențiale AWS IAM lipsă sau invalide — utilizatorul {} NU a fost adăugat în grupul {}. " +
+                      "Configurează AWS_ACCESS_KEY_ID și AWS_SECRET_ACCESS_KEY cu permisiunea cognito-idp:AdminAddUserToGroup. " +
+                      "Detalii: {}", req.getEmail(), groupName, credEx.getMessage());
         } catch (Exception e) {
-            log.warn("Nu s-a putut adăuga {} în grupul {}: {}", req.getEmail(), groupName, e.getMessage());
+            log.error("[GRUP] adminAddUserToGroup eșuat pentru {} în grupul {}: {}", req.getEmail(), groupName, e.getMessage());
         }
 
         log.info("Utilizator înregistrat: {} (sub={})", req.getEmail(), sub);
