@@ -1,0 +1,19 @@
+# Credențiale și configurații locale — NU commitați!
+.env
+*.env.local
+
+# Maven
+target/
+*.class
+
+# IDE
+.idea/workspace.xml
+*.iws
+*.iml
+
+application.properties
+.env
+
+# OS
+.DS_Store
+Thumbs.db
