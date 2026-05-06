@@ -22,6 +22,8 @@ public class UserResponse {
     private String displayName;
     private String role;          // "STUDENT" sau "PROFESSOR" (uppercase, compatibil cu frontul)
     private boolean emailVerified;
+    /** Dacă true, frontend-ul trebuie să redirecționeze utilizatorul la pagina de selectare rol. */
+    private boolean needsRoleSelection;
 
     private boolean banned;
     private String bannedBy;

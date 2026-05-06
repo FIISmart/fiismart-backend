@@ -24,13 +24,17 @@ public class User {
 
     private String displayName;
 
-    @Indexed(unique = true)
+    @Indexed(unique = true, sparse = true)
     private String email;
 
     @Indexed(sparse = true)
     private String cognitoSub;
+    /** Username-ul efectiv în Cognito User Pool (email pentru nativi, Google_<sub> pentru federați). */
+    private String cognitoUsername;
 
     private String role;
+    /** True pentru utilizatorii federați (Google) nou creați care nu și-au ales rolul încă. */
+    private boolean needsRoleSelection;
     private String passwordHash;
     private boolean banned;
     private String bannedBy;

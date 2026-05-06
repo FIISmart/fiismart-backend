@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import ro.fiismart.auth.dto.request.*;
 import ro.fiismart.auth.dto.response.AuthResponse;
@@ -85,8 +86,20 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<UserResponse> me(HttpServletRequest request) {
-        return ResponseEntity.ok(authService.getMe(extractBearerToken(request)));
+    public ResponseEntity<UserResponse> me(@AuthenticationPrincipal String userId) {
+        return ResponseEntity.ok(authService.getMe(userId));
+    }
+
+    /**
+     * Utilizatorii federați (Google) fără rol selectat apelează acest endpoint
+     * după ce aleg STUDENT sau PROFESSOR în pagina de Finalizare Profil.
+     * Necesită JWT valid (@AuthenticationPrincipal → MongoDB user ID).
+     */
+    @PostMapping("/assign-role")
+    public ResponseEntity<UserResponse> assignRole(
+            @Valid @RequestBody AssignRoleRequest req,
+            @AuthenticationPrincipal String userId) {
+        return ResponseEntity.ok(authService.assignRole(userId, req.getRole(), req.getFirstName(), req.getLastName()));
     }
 
     private String extractBearerToken(HttpServletRequest request) {

@@ -2,6 +2,7 @@ package ro.fiismart.auth.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import ro.fiismart.common.model.User;
 import ro.fiismart.common.repository.UserRepository;
@@ -12,10 +13,13 @@ import java.util.Optional;
 
 /**
  * La fiecare autentificare Cognito, sincronizează (upsert) utilizatorul în MongoDB.
- * Suportă 3 scenarii:
- *   1. Utilizator Cognito existent (găsit după cognitoSub) → returnat direct
- *   2. Utilizator legacy existent cu același email → cognitoSub backfilled
- *   3. Utilizator nou → creat din claim-urile JWT
+ *
+ * Scenarii gestionate:
+ *   1. Sub cunoscut → returnat direct (calea rapidă)
+ *   2. Email existent, nativ fără sub → backfill sub
+ *   3. Email existent, federare Google → account linking (actualizăm sub + cognitoUsername)
+ *   4. Utilizator complet nou, nativ → creat cu rol din grup Cognito
+ *   5. Utilizator complet nou, Google → creat cu needsRoleSelection = true
  */
 @Slf4j
 @Service
@@ -24,41 +28,84 @@ public class CognitoUserSyncService {
 
     private final UserRepository userRepository;
 
-    public User syncUser(String email, String sub, String name, List<String> groups) {
-        // Întotdeauna căutăm mai întâi după sub — cel mai fiabil identificator.
+    public User syncUser(String email, String sub, String cognitoUsername,
+                         String name, List<String> groups, boolean isFederated) {
+
+        // 1. Cauta după sub — cel mai fiabil identificator.
         Optional<User> bySub = userRepository.findByCognitoSub(sub);
-        if (bySub.isPresent()) return bySub.get();
+        if (bySub.isPresent()) {
+            User existing = bySub.get();
+            // Actualizăm cognitoUsername dacă lipsea (migrare date vechi).
+            if (existing.getCognitoUsername() == null && cognitoUsername != null) {
+                existing.setCognitoUsername(cognitoUsername);
+                return userRepository.save(existing);
+            }
+            return existing;
+        }
 
         String emailNorm = (email != null && !email.isBlank()) ? email.toLowerCase().trim() : null;
 
-        // Dacă avem email, încercăm să găsim un document existent și backfillăm sub-ul.
         if (emailNorm != null) {
             Optional<User> byEmail = userRepository.findByEmail(emailNorm);
             if (byEmail.isPresent()) {
                 User existing = byEmail.get();
                 if (existing.getCognitoSub() == null) {
+                    // 2. Backfill sub pentru cont legacy fără sub.
                     existing.setCognitoSub(sub);
+                    existing.setCognitoUsername(cognitoUsername);
+                    log.info("[Sync] Backfill cognitoSub pentru: {}", emailNorm);
                     return userRepository.save(existing);
                 }
+                if (isFederated) {
+                    // 3. Account linking: utilizatorul are deja cont nativ, acum se loghează cu Google.
+                    // Actualizăm sub-ul și username-ul Cognito → viitoarele login-uri Google găsesc direct.
+                    log.info("[Sync] Account linking Google→nativ pentru: {} (sub vechi={} nou={})",
+                            emailNorm, existing.getCognitoSub(), sub);
+                    existing.setCognitoSub(sub);
+                    existing.setCognitoUsername(cognitoUsername);
+                    return userRepository.save(existing);
+                }
+                // Nativi cu sub diferit (nu ar trebui să se întâmple în practică): returnam cont existent.
                 return existing;
             }
         }
 
-        // Utilizator complet nou — creăm document.
-        String role = determineRole(groups);
+        // 4 & 5. Utilizator complet nou.
+        // Grupul intern Cognito (ex: "eu-north-1_puAbduwjE_Google") nu înseamnă rol ales.
+        boolean hasRoleGroup = groups != null && groups.stream()
+                .anyMatch(g -> g.equalsIgnoreCase("STUDENT") || g.equalsIgnoreCase("PROFESSOR")
+                        || g.equalsIgnoreCase("TEACHER"));
+        boolean needsRoleSelection = isFederated && !hasRoleGroup;
+        String role = needsRoleSelection ? null : determineRole(groups);
         String displayName = (name != null && !name.isBlank()) ? name
                 : (emailNorm != null ? emailNorm : sub);
+
+        // Dacă email lipsește (token federat fără claim email),
+        // generăm placeholder unic bazat pe sub — evită conflicte de index null.
+        String emailToStore = (emailNorm != null) ? emailNorm : ("_pending_" + sub);
+
         User newUser = User.builder()
-                .email(emailNorm)
+                .email(emailToStore)
                 .displayName(displayName)
                 .cognitoSub(sub)
+                .cognitoUsername(cognitoUsername)
                 .role(role)
+                .needsRoleSelection(needsRoleSelection)
                 .createdAt(new Date())
                 .banned(false)
                 .build();
-        User saved = userRepository.save(newUser);
-        log.info("[Cognito] Utilizator nou creat din JWT: {} cu rolul {}", emailNorm, role);
-        return saved;
+
+        try {
+            User saved = userRepository.save(newUser);
+            log.info("[Sync] Utilizator nou creat: email={} federat={} needsRoleSelection={} rol={}",
+                    emailToStore, isFederated, needsRoleSelection, role);
+            return saved;
+        } catch (DuplicateKeyException e) {
+            log.warn("[Sync] DuplicateKey sub={} email={} — recuperez document existent", sub, emailToStore);
+            return userRepository.findByCognitoSub(sub)
+                    .or(() -> userRepository.findByEmail(emailToStore))
+                    .orElseThrow(() -> new RuntimeException("Nu s-a putut crea sau recupera utilizatorul: " + sub));
+        }
     }
 
     private String determineRole(List<String> groups) {
