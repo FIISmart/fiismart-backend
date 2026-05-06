@@ -223,6 +223,7 @@ public class ModuleQuizService {
                 .points(req.getPoints())
                 .options(req.getOptions())
                 .correctIdx(req.getCorrectIdx())
+                .correctText(req.getCorrectText())
                 .explanation(req.getExplanation())
                 .build();
     }
