@@ -317,18 +317,12 @@ public class CognitoAuthService {
 
     // ── GET ME ────────────────────────────────────────────────────────────────
 
-    public UserResponse getMe(String accessToken) {
-        Map<String, String> attrs = cognitoClient.getUser(
-                        GetUserRequest.builder().accessToken(accessToken).build()
-                ).userAttributes().stream()
-                .collect(Collectors.toMap(AttributeType::name, AttributeType::value));
-
-        String sub            = attrs.get("sub");
-        boolean emailVerified = Boolean.parseBoolean(attrs.get("email_verified"));
-
-        User user = userRepository.findByCognitoSub(sub)
+    public UserResponse getMe(String userId) {
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
+        // Dacă utilizatorul are cognitoSub, autentificarea Cognito a reușit → emailul e verificat.
+        // Utilizatorii federați (Google) sunt întotdeauna verificați de provider.
+        boolean emailVerified = user.getCognitoSub() != null;
         return toUserResponse(user, emailVerified);
     }
 
@@ -339,6 +333,51 @@ public class CognitoAuthService {
                 .orElseThrow(() -> new IllegalArgumentException("User profile not found for this account"));
         user.setLastLoginAt(new Date());
         return userRepository.save(user);
+    }
+
+    // ── ASSIGN ROLE (Google / federated users) ───────────────────────────────
+
+    public UserResponse assignRole(String userId, String role, String firstName, String lastName) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        if (!user.isNeedsRoleSelection()) {
+            throw new IllegalStateException("Rolul a fost deja atribuit pentru acest utilizator.");
+        }
+
+        if (firstName != null && !firstName.isBlank()) {
+            String fn = firstName.trim();
+            String ln = (lastName != null && !lastName.isBlank()) ? " " + lastName.trim() : "";
+            user.setDisplayName(fn + ln);
+        }
+
+        String normalizedRole = role.equalsIgnoreCase("PROFESSOR") ? "professor" : "student";
+        String groupName      = normalizedRole.toUpperCase();
+
+        user.setRole(normalizedRole);
+        user.setNeedsRoleSelection(false);
+        userRepository.save(user);
+        log.info("[assign-role] {} → rol={}", user.getEmail(), normalizedRole);
+
+        // Username-ul Cognito este necesar pentru adminAddUserToGroup.
+        // Pentru utilizatori federați acesta este "Google_<sub>"; pentru nativi este email-ul.
+        String cognitoUsernameForGroup = user.getCognitoUsername() != null
+                ? user.getCognitoUsername()
+                : user.getEmail();
+
+        try {
+            cognitoClient.adminAddUserToGroup(AdminAddUserToGroupRequest.builder()
+                    .userPoolId(cognitoProperties.getUserPoolId())
+                    .username(cognitoUsernameForGroup)
+                    .groupName(groupName)
+                    .build());
+            log.info("[assign-role] {} adăugat în grupul Cognito: {}", cognitoUsernameForGroup, groupName);
+        } catch (Exception e) {
+            log.error("[assign-role] Eroare la adăugarea în grupul Cognito pentru {}: {}",
+                    cognitoUsernameForGroup, e.getMessage());
+        }
+
+        return toUserResponse(user, true);
     }
 
     public UserResponse toUserResponse(User user, boolean emailVerified) {
@@ -360,6 +399,7 @@ public class CognitoAuthService {
                 .displayName(displayName)
                 .role(normalizedRole)
                 .emailVerified(emailVerified)
+                .needsRoleSelection(user.isNeedsRoleSelection())
                 .banned(user.isBanned())
                 .bannedBy(user.getBannedBy())
                 .bannedAt(user.getBannedAt())

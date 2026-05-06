@@ -12,11 +12,6 @@ import ro.fiismart.common.model.User;
 
 import java.util.List;
 
-/**
- * Convertește un JWT Cognito valid în Authentication cu principalul setat
- * la MongoDB user ID (String). Astfel toate controller-ele existente care
- * folosesc @AuthenticationPrincipal String userId continuă să funcționeze.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -27,38 +22,44 @@ public class CognitoJwtAuthenticationConverter
 
     @Override
     public UsernamePasswordAuthenticationToken convert(Jwt jwt) {
-        String sub = jwt.getSubject();
+        try {
+            String sub = jwt.getSubject();
 
-        // În acest User Pool, Cognito username = adresa de email.
-        // Access token-urile NU conțin claim-ul "email" (prezent doar în id_token),
-        // dar conțin "username" / "cognito:username" care este chiar emailul.
-        String email = jwt.getClaimAsString("email");
-        if (email == null || email.isBlank()) {
-            email = jwt.getClaimAsString("username");
+            // cognito:username → nativi = email (conține "@"), federați = "google_xxx"
+            String cognitoUsername = jwt.getClaimAsString("cognito:username");
+            if (cognitoUsername == null || cognitoUsername.isBlank()) {
+                cognitoUsername = jwt.getClaimAsString("username");
+            }
+
+            String email = jwt.getClaimAsString("email");
+            if ((email == null || email.isBlank()) && cognitoUsername != null && cognitoUsername.contains("@")) {
+                email = cognitoUsername;
+            }
+
+            boolean isFederated = cognitoUsername != null && !cognitoUsername.contains("@");
+
+            String displayName = jwt.getClaimAsString("name");
+            List<String> groups = jwt.getClaimAsStringList("cognito:groups");
+
+            User user = cognitoUserSyncService.syncUser(
+                    email, sub, cognitoUsername, displayName,
+                    groups != null ? groups : List.of(), isFederated
+            );
+
+            String dbRole = user.getRole() != null ? user.getRole().toLowerCase() : "student";
+            String grantedRole = (dbRole.equals("professor") || dbRole.equals("teacher"))
+                    ? "ROLE_PROFESSOR" : "ROLE_STUDENT";
+
+            log.debug("[JWT] sub={} email={} federat={} rol={} mongoId={}",
+                    sub, email, isFederated, grantedRole, user.getId());
+
+            return new UsernamePasswordAuthenticationToken(
+                    user.getId(), null,
+                    List.of(new SimpleGrantedAuthority(grantedRole))
+            );
+        } catch (Exception e) {
+            log.error("[JWT] convert() a aruncat excepție — authentication refuzat: {}", e.getMessage(), e);
+            return null;
         }
-        if (email == null || email.isBlank()) {
-            email = jwt.getClaimAsString("cognito:username");
-        }
-
-        // "name" claim = display name (prenume + nume); absent din access tokens.
-        // syncUser folosește emailul ca fallback pentru display name când name e null.
-        String displayName = jwt.getClaimAsString("name");
-
-        List<String> groups = jwt.getClaimAsStringList("cognito:groups");
-
-        User user = cognitoUserSyncService.syncUser(
-                email, sub, displayName, groups != null ? groups : List.of()
-        );
-
-        String dbRole     = user.getRole() != null ? user.getRole().toLowerCase() : "student";
-        String grantedRole = (dbRole.equals("professor") || dbRole.equals("teacher"))
-                ? "ROLE_PROFESSOR" : "ROLE_STUDENT";
-
-        log.debug("[JWT] Autentificat: email={} mongoId={} rol={}", email, user.getId(), grantedRole);
-
-        return new UsernamePasswordAuthenticationToken(
-                user.getId(), null,
-                List.of(new SimpleGrantedAuthority(grantedRole))
-        );
     }
 }
