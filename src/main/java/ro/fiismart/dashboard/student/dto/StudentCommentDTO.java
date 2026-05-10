@@ -14,6 +14,7 @@ public class StudentCommentDTO {
     private String body;
     private int likeCount;
     private String timeAgo;
+    private Integer positionSecs;
     private boolean isLikedByMe;
 
     @Builder.Default

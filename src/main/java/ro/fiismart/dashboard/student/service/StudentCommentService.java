@@ -67,6 +67,7 @@ public class StudentCommentService {
                 .courseId(courseId)
                 .lectureId(lectureId)
                 .body(request.getBody())
+                .positionSecs(request.getPositionSecs())
                 .createdAt(new Date())
                 .deleted(false)
                 .likeCount(0)
@@ -88,6 +89,7 @@ public class StudentCommentService {
                 .lectureId(parent.getLectureId())
                 .parentCommentId(parent.getId())
                 .body(request.getBody())
+                .positionSecs(request.getPositionSecs())
                 .createdAt(new Date())
                 .deleted(false)
                 .likeCount(0)
@@ -138,10 +140,12 @@ public class StudentCommentService {
                 .body(comment.getBody() != null ? comment.getBody() : "")
                 .likeCount(comment.getLikeCount())
                 .timeAgo(getTimeAgo(comment.getCreatedAt()))
+                .positionSecs(comment.getPositionSecs())
                 .isLikedByMe(isLiked)
                 .replies(new ArrayList<>())
                 .build();
     }
+
 
     private String getTimeAgo(Date past) {
         if (past == null) return "Acum ceva timp";

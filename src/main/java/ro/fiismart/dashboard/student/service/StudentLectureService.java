@@ -10,7 +10,6 @@ import ro.fiismart.common.repository.*;
 import ro.fiismart.dashboard.student.dto.*;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 public class StudentLectureService {
@@ -74,12 +73,7 @@ public class StudentLectureService {
         if (lecture == null) throw new RuntimeException("Lecture not found: " + lectureId);
 
         Enrollment enrollment = enrollmentRepository.findByStudentIdAndCourseId(studentId, courseId).orElse(null);
-        LectureProgressEntry progress = null;
-        if (enrollment != null && enrollment.getLectureProgress() != null) {
-            progress = enrollment.getLectureProgress().stream()
-                    .filter(p -> lectureId.equals(p.getLectureId()))
-                    .findFirst().orElse(null);
-        }
+        LectureProgressEntry progress = findLatestProgress(enrollment, lectureId);
 
         StudentLectureDetailDTO dto = new StudentLectureDetailDTO();
         dto.setLectureId(lecture.getId());
@@ -99,8 +93,8 @@ public class StudentLectureService {
     }
 
     public StudentLectureProgressResponse updateLectureProgress(String studentId, String courseId,
-                                                                 String lectureId,
-                                                                 StudentLectureProgressRequest request) {
+                                                                String lectureId,
+                                                                StudentLectureProgressRequest request) {
         Course course = courseRepository.findById(courseId)
                 .orElseThrow(() -> new RuntimeException("Course not found: " + courseId));
 
@@ -110,12 +104,24 @@ public class StudentLectureService {
         Enrollment enrollment = enrollmentRepository.findByStudentIdAndCourseId(studentId, courseId)
                 .orElseThrow(() -> new RuntimeException("Student not enrolled: " + courseId));
 
-        int watchedPercent = Math.max(0, Math.min(100, request.getWatchedPercent()));
+        int watchedPercent = request.getWatchedPercent();
+        if (watchedPercent < 0) watchedPercent = 0;
+        if (watchedPercent > 100) watchedPercent = 100;
+
         int positionSecs = Math.max(0, request.getPositionSecs());
         if (lecture.getDurationSecs() > 0 && positionSecs > lecture.getDurationSecs()) {
             positionSecs = lecture.getDurationSecs();
         }
-        boolean completed = (watchedPercent == 100);
+
+        LectureProgressEntry existingProgress = findLatestProgress(enrollment, lectureId);
+
+        boolean completed = (watchedPercent >= 95);
+
+        if (existingProgress != null) {
+            watchedPercent = Math.max(watchedPercent, existingProgress.getWatchedPercent());
+            completed = existingProgress.isCompleted() || completed;
+        }
+
         Date now = new Date();
 
         LectureProgressEntry progressEntry = LectureProgressEntry.builder()
@@ -203,11 +209,39 @@ public class StudentLectureService {
         Map<String, LectureProgressEntry> map = new HashMap<>();
         if (enrollment != null && enrollment.getLectureProgress() != null) {
             for (LectureProgressEntry p : enrollment.getLectureProgress()) {
-                if (p.getLectureId() != null) map.put(p.getLectureId(), p);
+                if (p.getLectureId() == null) continue;
+                LectureProgressEntry existing = map.get(p.getLectureId());
+                if (existing == null || isNewer(p, existing)) {
+                    map.put(p.getLectureId(), p);
+                }
             }
         }
         return map;
     }
+
+    private LectureProgressEntry findLatestProgress(Enrollment enrollment, String lectureId) {
+        if (enrollment == null || enrollment.getLectureProgress() == null) return null;
+
+        LectureProgressEntry latest = null;
+        for (LectureProgressEntry entry : enrollment.getLectureProgress()) {
+            if (entry == null || !lectureId.equals(entry.getLectureId())) continue;
+            if (latest == null || isNewer(entry, latest)) {
+                latest = entry;
+            }
+        }
+        return latest;
+    }
+
+    private boolean isNewer(LectureProgressEntry candidate, LectureProgressEntry current) {
+        Date candidateUpdatedAt = candidate != null ? candidate.getUpdatedAt() : null;
+        Date currentUpdatedAt = current != null ? current.getUpdatedAt() : null;
+
+        if (candidateUpdatedAt == null && currentUpdatedAt == null) return false;
+        if (candidateUpdatedAt == null) return false;
+        if (currentUpdatedAt == null) return true;
+        return candidateUpdatedAt.after(currentUpdatedAt);
+    }
+
 
     private StudentLectureDTO buildLectureDTO(Lecture lecture, LectureProgressEntry progress) {
         StudentLectureDTO dto = new StudentLectureDTO();
