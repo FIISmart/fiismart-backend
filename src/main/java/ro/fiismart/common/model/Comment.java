@@ -28,6 +28,7 @@ public class Comment {
     private String body;
     private Date createdAt;
     private Date updatedAt;
+    private Integer positionSecs;
 
     @Field("isDeleted")
     private boolean deleted;
