@@ -16,7 +16,8 @@ public class ModuleQuizQuestionResponse {
     private String type;
     private int points;
     private List<String> options;
-    private int correctIdx;
+    private Integer correctIdx;
+    private String correctText;
     private String explanation;
 
     public static ModuleQuizQuestionResponse fromModel(ModuleQuizQuestion q) {
@@ -29,6 +30,7 @@ public class ModuleQuizQuestionResponse {
                 .points(q.getPoints())
                 .options(q.getOptions())
                 .correctIdx(q.getCorrectIdx())
+                .correctText(q.getCorrectText())
                 .explanation(q.getExplanation())
                 .build();
     }

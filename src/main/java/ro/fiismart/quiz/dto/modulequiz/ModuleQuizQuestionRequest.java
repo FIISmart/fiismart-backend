@@ -1,8 +1,6 @@
 package ro.fiismart.quiz.dto.modulequiz;
 
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import lombok.Data;
 
 import java.util.List;
@@ -16,14 +14,18 @@ public class ModuleQuizQuestionRequest {
     /** Optional image URL displayed alongside the question. */
     private String imageUrl;
 
+    /** One of {@code "multiple_choice"} (default) or {@code "written"}. */
     private String type = "multiple_choice";
     private int points = 1;
 
-    @NotEmpty(message = "At least two options are required")
+    /** Required for {@code "multiple_choice"} questions; empty/null for {@code "written"}. */
     private List<String> options;
 
-    @Min(value = 0, message = "Correct index must be >= 0")
-    private int correctIdx;
+    /** Required for {@code "multiple_choice"} questions; null for {@code "written"}. */
+    private Integer correctIdx;
+
+    /** Required for {@code "written"} questions; null for {@code "multiple_choice"}. */
+    private String correctText;
 
     private String explanation;
 }
