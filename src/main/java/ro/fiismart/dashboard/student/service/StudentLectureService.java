@@ -113,7 +113,10 @@ public class StudentLectureService {
 
         Lecture lecture = findLectureInCourse(course, lectureId);
         if (lecture == null) throw new RuntimeException("Lecture not found: " + lectureId);
-        updateLectureDurationIfNeeded(courseId, course, lecture, request.getDurationSecs());
+        // NOTE: do NOT propagate request.getDurationSecs() into the canonical
+        // Course document from a student-authenticated path. Course metadata
+        // is owned by the instructor builder; allowing student writes here
+        // means any student can mutate the course definition for all peers.
 
         Enrollment enrollment = enrollmentRepository.findByStudentIdAndCourseId(studentId, courseId)
                 .orElseThrow(() -> new RuntimeException("Student not enrolled: " + courseId));
@@ -133,6 +136,7 @@ public class StudentLectureService {
 
         if (existingProgress != null) {
             watchedPercent = Math.max(watchedPercent, existingProgress.getWatchedPercent());
+            positionSecs = Math.max(positionSecs, existingProgress.getPositionSecs());
             completed = existingProgress.isCompleted() || completed;
         }
 
