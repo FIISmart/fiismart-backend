@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Quiz;
 import ro.fiismart.common.model.QuizQuestion;
+import ro.fiismart.common.repository.ModuleQuizRepository;
 import ro.fiismart.common.repository.QuizRepository;
 import ro.fiismart.quiz.dto.QuizQuestionRequest;
 import ro.fiismart.quiz.dto.QuizQuestionResponse;
@@ -24,6 +25,7 @@ import java.util.List;
 public class QuizManagementService {
 
     private final QuizRepository quizRepository;
+    private final ModuleQuizRepository moduleQuizRepository;
     private final MongoTemplate mongoTemplate;
 
     public QuizResponse create(QuizRequest request) {
@@ -39,8 +41,11 @@ public class QuizManagementService {
     }
 
     public QuizResponse findById(String quizId) {
-        return QuizResponse.fromModel(quizRepository.findById(quizId)
-                .orElseThrow(() -> new ResourceNotFoundException("Quiz not found: " + quizId)));
+        return quizRepository.findById(quizId)
+                .map(QuizResponse::fromModel)
+                .orElseGet(() -> moduleQuizRepository.findById(quizId)
+                        .map(QuizResponse::fromModuleQuiz)
+                        .orElseThrow(() -> new ResourceNotFoundException("Quiz not found: " + quizId)));
     }
 
     public QuizResponse findByCourseId(String courseId) {

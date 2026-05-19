@@ -10,10 +10,12 @@ import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.CourseModule;
 import ro.fiismart.common.model.Lecture;
 import ro.fiismart.common.repository.CourseRepository;
+import ro.fiismart.common.repository.EnrollmentRepository;
 import ro.fiismart.courses.dto.request.*;
 import ro.fiismart.courses.dto.response.CourseResponse;
 import ro.fiismart.courses.dto.response.LectureResponse;
 import ro.fiismart.courses.dto.response.ModuleResponse;
+import ro.fiismart.notification.service.NotificationService;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -23,10 +25,17 @@ public class CourseManagementService {
 
     private final CourseRepository courseRepository;
     private final MongoTemplate mongoTemplate;
+    private final NotificationService notificationService;
+    private final EnrollmentRepository enrollmentRepository;
 
-    public CourseManagementService(CourseRepository courseRepository, MongoTemplate mongoTemplate) {
+    public CourseManagementService(CourseRepository courseRepository,
+                                   MongoTemplate mongoTemplate,
+                                   NotificationService notificationService,
+                                   EnrollmentRepository enrollmentRepository) {
         this.courseRepository = courseRepository;
         this.mongoTemplate = mongoTemplate;
+        this.notificationService = notificationService;
+        this.enrollmentRepository = enrollmentRepository;
     }
 
     // ── COURSE CRUD ──────────────────────────────────────────────────────────
@@ -93,7 +102,17 @@ public class CourseManagementService {
                 .orElseThrow(() -> new ResourceNotFoundException("Course", id));
         course.setStatus("published");
         course.setUpdatedAt(new Date());
-        return CourseResponse.fromModel(courseRepository.save(course));
+        CourseResponse response = CourseResponse.fromModel(courseRepository.save(course));
+
+        // Notifică studenții care au început cursul că a fost actualizat/publicat
+        try {
+            String msg = String.format("Cursul \"%s\" a fost actualizat cu conținut nou", course.getTitle());
+            enrollmentRepository.findByCourseIdAndOverallProgressGreaterThan(id, 0)
+                    .forEach(e -> notificationService.createCourseUpdateNotification(
+                            e.getStudentId(), course.getTitle(), id, msg));
+        } catch (Exception ignored) {}
+
+        return response;
     }
 
     public CourseResponse draftCourse(String id) {
@@ -220,6 +239,16 @@ public class CourseManagementService {
                 new Update().push("modules.$.lectures", lecture).set("updatedAt", new Date()),
                 Course.class
         );
+
+        // Notifică studenții care au început cursul că a fost adăugată o lecție nouă
+        try {
+            String msg = String.format("Lecție nouă: \"%s\" a fost adăugată în cursul \"%s\"",
+                    lecture.getTitle(), course.getTitle());
+            enrollmentRepository.findByCourseIdAndOverallProgressGreaterThan(courseId, 0)
+                    .forEach(e -> notificationService.createCourseUpdateNotification(
+                            e.getStudentId(), course.getTitle(), courseId, msg));
+        } catch (Exception ignored) {}
+
         return LectureResponse.fromModel(lecture);
     }
 

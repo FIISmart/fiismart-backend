@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import ro.fiismart.common.model.*;
 import ro.fiismart.common.repository.*;
 import ro.fiismart.dashboard.student.dto.*;
+import java.util.Optional;
 
 import java.util.*;
 
@@ -17,17 +18,20 @@ public class StudentLectureService {
     private final CourseRepository courseRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final QuizRepository quizRepository;
+    private final ModuleQuizRepository moduleQuizRepository;
     private final QuizAttemptRepository quizAttemptRepository;
     private final MongoTemplate mongoTemplate;
 
     public StudentLectureService(CourseRepository courseRepository,
                                  EnrollmentRepository enrollmentRepository,
                                  QuizRepository quizRepository,
+                                 ModuleQuizRepository moduleQuizRepository,
                                  QuizAttemptRepository quizAttemptRepository,
                                  MongoTemplate mongoTemplate) {
         this.courseRepository = courseRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.quizRepository = quizRepository;
+        this.moduleQuizRepository = moduleQuizRepository;
         this.quizAttemptRepository = quizAttemptRepository;
         this.mongoTemplate = mongoTemplate;
     }
@@ -258,33 +262,42 @@ public class StudentLectureService {
     }
 
     private void populateModuleQuizInfo(StudentModuleDTO dto, CourseModule module, String studentId) {
-        if (module.getQuizId() == null) {
-            dto.setHasQuiz(false);
+        // Try the new ModuleQuiz collection first (Course Builder quizzes)
+        Optional<ModuleQuiz> moduleQuizOpt = moduleQuizRepository.findByModuleIdAndQuizScope(module.getId(), "module");
+
+        String resolvedQuizId = null;
+        if (moduleQuizOpt.isPresent()) {
+            resolvedQuizId = moduleQuizOpt.get().getId();
+        } else if (module.getQuizId() != null) {
+            Quiz legacy = quizRepository.findById(module.getQuizId()).orElse(null);
+            if (legacy != null) resolvedQuizId = legacy.getId();
+        }
+
+        if (resolvedQuizId == null) {
+            dto.setQuiz(null);
             return;
         }
 
-        Quiz quiz = quizRepository.findById(module.getQuizId()).orElse(null);
-        if (quiz == null) {
-            dto.setHasQuiz(false);
-            return;
+        List<QuizAttempt> attempts = quizAttemptRepository.findByStudentIdAndQuizId(studentId, resolvedQuizId);
+        boolean hasPassed = attempts != null && attempts.stream().anyMatch(QuizAttempt::isPassed);
+        int lastScore = 0;
+        if (attempts != null && !attempts.isEmpty()) {
+            QuizAttempt latest = quizAttemptRepository
+                    .findTopByStudentIdAndQuizIdOrderByAttemptedAtDesc(studentId, resolvedQuizId)
+                    .orElse(null);
+            lastScore = latest != null ? latest.getScore() : 0;
         }
 
-        dto.setHasQuiz(true);
-        dto.setQuizId(quiz.getId());
+        String statusLabel = (attempts == null || attempts.isEmpty()) ? "Disponibil"
+                : hasPassed ? "Promovat" : "Picat";
 
-        List<QuizAttempt> attempts = quizAttemptRepository.findByStudentIdAndQuizId(studentId, quiz.getId());
-        if (attempts == null || attempts.isEmpty()) {
-            dto.setQuizStatus("disponibil");
-            return;
-        }
-
-        QuizAttempt latest = quizAttemptRepository
-                .findTopByStudentIdAndQuizIdOrderByAttemptedAtDesc(studentId, quiz.getId())
-                .orElse(null);
-        dto.setQuizLatestScore(latest != null ? latest.getScore() : null);
-
-        boolean hasPassed = attempts.stream().anyMatch(QuizAttempt::isPassed);
-        dto.setQuizStatus(hasPassed ? "promovat" : "picat");
+        StudentModuleDTO.QuizInfo quizInfo = new StudentModuleDTO.QuizInfo();
+        quizInfo.setQuizId(resolvedQuizId);
+        quizInfo.setAttemptCount(attempts != null ? attempts.size() : 0);
+        quizInfo.setLastScore(lastScore);
+        quizInfo.setPassed(hasPassed);
+        quizInfo.setStatusLabel(statusLabel);
+        dto.setQuiz(quizInfo);
     }
 
     private Lecture findLectureInCourse(Course course, String lectureId) {

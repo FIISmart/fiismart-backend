@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import ro.fiismart.quizattempt.dto.QuizAttemptRequest;
 import ro.fiismart.quizattempt.dto.QuizAttemptResponse;
@@ -20,7 +21,10 @@ public class QuizAttemptController {
     private final QuizAttemptService quizAttemptService;
 
     @PostMapping
-    public ResponseEntity<QuizAttemptResponse> create(@Valid @RequestBody QuizAttemptRequest request) {
+    public ResponseEntity<QuizAttemptResponse> create(
+            @Valid @RequestBody QuizAttemptRequest request,
+            @AuthenticationPrincipal String userId) {
+        if (userId != null) request.setStudentId(userId);
         return ResponseEntity.status(HttpStatus.CREATED).body(quizAttemptService.create(request));
     }
 
