@@ -10,14 +10,9 @@ public class StudentModuleDTO {
     private String description;
     private int order;
     private List<StudentLectureDTO> lectures;
-    private QuizInfo quiz;
-
-    @Data
-    public static class QuizInfo {
-        private String quizId;
-        private int attemptCount;
-        private int lastScore;
-        private boolean passed;
-        private String statusLabel;
-    }
+    private boolean hasQuiz;
+    private String quizId;
+    private String quizStatus;
+    private Integer quizLatestScore;
+    private StudentQuizStatusDTO quiz;
 }

@@ -18,7 +18,10 @@ public class Lecture {
     private String id;
     private String moduleId;
     private String title;
+    private String type;
+    private String content;
     private String videoUrl;
+    private String pdfUrl;
 
     @Builder.Default
     private List<String> imageUrls = new ArrayList<>();

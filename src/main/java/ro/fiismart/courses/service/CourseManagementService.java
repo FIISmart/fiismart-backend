@@ -10,12 +10,10 @@ import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.CourseModule;
 import ro.fiismart.common.model.Lecture;
 import ro.fiismart.common.repository.CourseRepository;
-import ro.fiismart.common.repository.EnrollmentRepository;
 import ro.fiismart.courses.dto.request.*;
 import ro.fiismart.courses.dto.response.CourseResponse;
 import ro.fiismart.courses.dto.response.LectureResponse;
 import ro.fiismart.courses.dto.response.ModuleResponse;
-import ro.fiismart.notification.service.NotificationService;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -25,17 +23,10 @@ public class CourseManagementService {
 
     private final CourseRepository courseRepository;
     private final MongoTemplate mongoTemplate;
-    private final NotificationService notificationService;
-    private final EnrollmentRepository enrollmentRepository;
 
-    public CourseManagementService(CourseRepository courseRepository,
-                                   MongoTemplate mongoTemplate,
-                                   NotificationService notificationService,
-                                   EnrollmentRepository enrollmentRepository) {
+    public CourseManagementService(CourseRepository courseRepository, MongoTemplate mongoTemplate) {
         this.courseRepository = courseRepository;
         this.mongoTemplate = mongoTemplate;
-        this.notificationService = notificationService;
-        this.enrollmentRepository = enrollmentRepository;
     }
 
     // ── COURSE CRUD ──────────────────────────────────────────────────────────
@@ -102,17 +93,7 @@ public class CourseManagementService {
                 .orElseThrow(() -> new ResourceNotFoundException("Course", id));
         course.setStatus("published");
         course.setUpdatedAt(new Date());
-        CourseResponse response = CourseResponse.fromModel(courseRepository.save(course));
-
-        // Notifică studenții care au început cursul că a fost actualizat/publicat
-        try {
-            String msg = String.format("Cursul \"%s\" a fost actualizat cu conținut nou", course.getTitle());
-            enrollmentRepository.findByCourseIdAndOverallProgressGreaterThan(id, 0)
-                    .forEach(e -> notificationService.createCourseUpdateNotification(
-                            e.getStudentId(), course.getTitle(), id, msg));
-        } catch (Exception ignored) {}
-
-        return response;
+        return CourseResponse.fromModel(courseRepository.save(course));
     }
 
     public CourseResponse draftCourse(String id) {
@@ -227,7 +208,10 @@ public class CourseManagementService {
                 .id(UUID.randomUUID().toString())
                 .moduleId(moduleId)
                 .title(req.getTitle())
-                .videoUrl(req.getVideoUrl())
+                .type(resolveLectureType(req.getType(), req.getContent(), req.getVideoUrl(), req.getPdfUrl()))
+                .content(resolveLectureContent(req.getContent(), req.getVideoUrl(), req.getPdfUrl()))
+                .videoUrl(resolveVideoUrl(req.getType(), req.getContent(), req.getVideoUrl()))
+                .pdfUrl(resolvePdfUrl(req.getType(), req.getContent(), req.getPdfUrl()))
                 .imageUrls(req.getImageUrls() != null ? req.getImageUrls() : new ArrayList<>())
                 .order(nextOrder)
                 .durationSecs(req.getDurationSecs())
@@ -239,16 +223,6 @@ public class CourseManagementService {
                 new Update().push("modules.$.lectures", lecture).set("updatedAt", new Date()),
                 Course.class
         );
-
-        // Notifică studenții care au început cursul că a fost adăugată o lecție nouă
-        try {
-            String msg = String.format("Lecție nouă: \"%s\" a fost adăugată în cursul \"%s\"",
-                    lecture.getTitle(), course.getTitle());
-            enrollmentRepository.findByCourseIdAndOverallProgressGreaterThan(courseId, 0)
-                    .forEach(e -> notificationService.createCourseUpdateNotification(
-                            e.getStudentId(), course.getTitle(), courseId, msg));
-        } catch (Exception ignored) {}
-
         return LectureResponse.fromModel(lecture);
     }
 
@@ -273,7 +247,24 @@ public class CourseManagementService {
                 .filter(l -> lectureId.equals(l.getId())).findFirst().orElse(null);
 
         if (lecture != null && req.getTitle() != null) lecture.setTitle(req.getTitle());
-        if (lecture != null && req.getVideoUrl() != null) lecture.setVideoUrl(req.getVideoUrl());
+        if (lecture != null) {
+            String nextContent = resolveLectureContent(req.getContent(), req.getVideoUrl(), req.getPdfUrl());
+            String nextType = resolveLectureType(req.getType(), nextContent, req.getVideoUrl(), req.getPdfUrl());
+
+            if (req.getType() != null || !nextContent.isBlank()) lecture.setType(nextType);
+            if (!nextContent.isBlank()) lecture.setContent(nextContent);
+            if (req.getVideoUrl() != null || "video".equals(nextType)) {
+                lecture.setVideoUrl(resolveVideoUrl(nextType, nextContent, req.getVideoUrl()));
+            }
+            if (req.getPdfUrl() != null || "pdf".equals(nextType)) {
+                lecture.setPdfUrl(resolvePdfUrl(nextType, nextContent, req.getPdfUrl()));
+            }
+            if (req.getType() != null && !"pdf".equals(nextType)) {
+                lecture.setPdfUrl(null);
+            }
+            if (req.getImageUrls() != null) lecture.setImageUrls(req.getImageUrls());
+            if (req.getDurationSecs() > 0) lecture.setDurationSecs(req.getDurationSecs());
+        }
 
         mongoTemplate.updateFirst(
                 Query.query(Criteria.where("_id").is(courseId).and("modules.id").is(moduleId)),
@@ -304,5 +295,38 @@ public class CourseManagementService {
                 .filter(m -> moduleId.equals(m.getId()))
                 .findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("Module", moduleId));
+    }
+
+    private String resolveLectureContent(String content, String videoUrl, String pdfUrl) {
+        if (content != null) return content;
+        if (pdfUrl != null) return pdfUrl;
+        if (videoUrl != null) return videoUrl;
+        return "";
+    }
+
+    private String resolveLectureType(String type, String content, String videoUrl, String pdfUrl) {
+        if (type != null && !type.isBlank()) return type;
+        if (pdfUrl != null && !pdfUrl.isBlank()) return "pdf";
+
+        String source = resolveLectureContent(content, videoUrl, pdfUrl).toLowerCase(Locale.ROOT);
+        if (source.endsWith(".pdf")) return "pdf";
+        if (source.endsWith(".md") || source.endsWith(".markdown") || (!source.startsWith("http") && !source.isBlank())) {
+            return "markdown";
+        }
+        return "video";
+    }
+
+    private String resolveVideoUrl(String type, String content, String videoUrl) {
+        String resolvedType = resolveLectureType(type, content, videoUrl, null);
+        if (!"video".equals(resolvedType)) return videoUrl;
+        if (videoUrl != null) return videoUrl;
+        return content;
+    }
+
+    private String resolvePdfUrl(String type, String content, String pdfUrl) {
+        String resolvedType = resolveLectureType(type, content, null, pdfUrl);
+        if (!"pdf".equals(resolvedType)) return pdfUrl;
+        if (pdfUrl != null) return pdfUrl;
+        return content;
     }
 }

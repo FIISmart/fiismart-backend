@@ -54,24 +54,13 @@ public class TeacherCommentsService {
                 List<Comment> replies = commentRepository.findRepliesByParentId(comment.getId());
                 User author = userRepository.findById(comment.getAuthorId()).orElse(null);
 
-                String authorDisplayName;
-                if (author != null && author.getDisplayName() != null && !author.getDisplayName().isBlank()) {
-                    authorDisplayName = author.getDisplayName();
-                } else if (author != null && author.getEmail() != null && !author.getEmail().startsWith("_")) {
-                    String email = author.getEmail();
-                    int at = email.indexOf('@');
-                    authorDisplayName = at > 0 ? email.substring(0, at) : email;
-                } else {
-                    authorDisplayName = "Utilizator necunoscut";
-                }
-
                 TeacherCommentPreviewDTO dto = new TeacherCommentPreviewDTO();
                 dto.setCommentId(comment.getId());
                 dto.setCourseId(comment.getCourseId());
                 dto.setCourseTitle(courseTitles.get(comment.getCourseId()));
                 dto.setLectureId(comment.getLectureId());
                 dto.setAuthorId(comment.getAuthorId());
-                dto.setAuthorDisplayName(authorDisplayName);
+                dto.setAuthorDisplayName(author != null ? author.getDisplayName() : "");
                 dto.setBody(comment.getBody());
                 dto.setCreatedAt(comment.getCreatedAt());
                 dto.setLikeCount(comment.getLikeCount());

@@ -9,12 +9,9 @@ import org.springframework.stereotype.Service;
 import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Enrollment;
 import ro.fiismart.common.model.LectureProgressEntry;
-import ro.fiismart.common.repository.CourseRepository;
 import ro.fiismart.common.repository.EnrollmentRepository;
-import ro.fiismart.common.repository.UserRepository;
 import ro.fiismart.enrollment.dto.EnrollmentRequest;
 import ro.fiismart.enrollment.dto.EnrollmentResponse;
-import ro.fiismart.notification.service.NotificationService;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -26,9 +23,6 @@ public class EnrollmentService {
 
     private final EnrollmentRepository enrollmentRepository;
     private final MongoTemplate mongoTemplate;
-    private final NotificationService notificationService;
-    private final CourseRepository courseRepository;
-    private final UserRepository userRepository;
 
     public EnrollmentResponse create(EnrollmentRequest request) {
         Enrollment enrollment = Enrollment.builder()
@@ -39,24 +33,7 @@ public class EnrollmentService {
                 .overallProgress(0)
                 .lectureProgress(new ArrayList<>())
                 .build();
-        EnrollmentResponse response = toResponse(enrollmentRepository.save(enrollment));
-
-        // Notifică profesorul și studentul
-        try {
-            courseRepository.findById(request.getCourseId()).ifPresent(course -> {
-                String studentName = userRepository.findById(request.getStudentId())
-                        .map(u -> u.getDisplayName() != null ? u.getDisplayName() : "Un student")
-                        .orElse("Un student");
-                notificationService.createEnrollmentNotification(
-                        course.getTeacherId(), studentName, course.getTitle(), course.getId());
-                notificationService.createStudentEnrollmentNotification(
-                        request.getStudentId(), course.getTitle(), course.getId());
-            });
-        } catch (Exception ignored) {
-            // Nu eșuăm înrolarea din cauza notificării
-        }
-
-        return response;
+        return toResponse(enrollmentRepository.save(enrollment));
     }
 
     public EnrollmentResponse findById(String id) {

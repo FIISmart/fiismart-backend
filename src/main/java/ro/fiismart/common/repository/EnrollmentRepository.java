@@ -25,6 +25,4 @@ public interface EnrollmentRepository extends MongoRepository<Enrollment, String
     void deleteByStudentIdAndCourseId(String studentId, String courseId);
 
     void deleteByCourseId(String courseId);
-
-    List<Enrollment> findByCourseIdAndOverallProgressGreaterThan(String courseId, int minProgress);
 }

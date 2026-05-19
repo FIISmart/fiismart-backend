@@ -15,6 +15,7 @@ public class QuizAttemptRequest {
     @NotBlank
     private String courseId;
 
+    @NotBlank
     private String studentId;
 
     private int score;
