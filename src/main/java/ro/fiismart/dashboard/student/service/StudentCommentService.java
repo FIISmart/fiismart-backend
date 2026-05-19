@@ -8,9 +8,11 @@ import org.springframework.stereotype.Service;
 import ro.fiismart.common.model.Comment;
 import ro.fiismart.common.model.User;
 import ro.fiismart.common.repository.CommentRepository;
+import ro.fiismart.common.repository.CourseRepository;
 import ro.fiismart.common.repository.UserRepository;
 import ro.fiismart.dashboard.student.dto.CommentCreateRequest;
 import ro.fiismart.dashboard.student.dto.StudentCommentDTO;
+import ro.fiismart.notification.service.NotificationService;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -22,13 +24,19 @@ public class StudentCommentService {
     private final CommentRepository commentRepository;
     private final UserRepository userRepository;
     private final MongoTemplate mongoTemplate;
+    private final NotificationService notificationService;
+    private final CourseRepository courseRepository;
 
     public StudentCommentService(CommentRepository commentRepository,
                                  UserRepository userRepository,
-                                 MongoTemplate mongoTemplate) {
+                                 MongoTemplate mongoTemplate,
+                                 NotificationService notificationService,
+                                 CourseRepository courseRepository) {
         this.commentRepository = commentRepository;
         this.userRepository = userRepository;
         this.mongoTemplate = mongoTemplate;
+        this.notificationService = notificationService;
+        this.courseRepository = courseRepository;
     }
 
     public List<StudentCommentDTO> getCommentsThreaded(String studentId, String lectureId) {
@@ -75,6 +83,21 @@ public class StudentCommentService {
 
         Comment saved = commentRepository.save(comment);
         User author = userRepository.findById(studentId).orElse(null);
+
+        // Notifică profesorul de un comentariu nou
+        try {
+            courseRepository.findById(courseId).ifPresent(course -> {
+                if (!course.getTeacherId().equals(studentId)) {
+                    String authorName = author != null && author.getDisplayName() != null
+                            ? author.getDisplayName() : "Un student";
+                    notificationService.createCommentNotification(
+                            course.getTeacherId(), authorName, course.getTitle(), courseId, lectureId);
+                }
+            });
+        } catch (Exception ignored) {
+            // Nu eșuăm comentariul din cauza notificării
+        }
+
         return convertToDTO(saved, studentId, author);
     }
 
@@ -97,6 +120,19 @@ public class StudentCommentService {
 
         Comment saved = commentRepository.save(reply);
         User author = userRepository.findById(studentId).orElse(null);
+
+        // Notifică autorul comentariului original despre răspuns
+        try {
+            if (!parent.getAuthorId().equals(studentId)) {
+                String replierName = author != null && author.getDisplayName() != null
+                        ? author.getDisplayName() : "Cineva";
+                notificationService.createReplyNotification(
+                        parent.getAuthorId(), replierName, parent.getCourseId());
+            }
+        } catch (Exception ignored) {
+            // Nu eșuăm răspunsul din cauza notificării
+        }
+
         return convertToDTO(saved, studentId, author);
     }
 

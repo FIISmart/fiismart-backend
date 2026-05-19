@@ -36,7 +36,13 @@ public class CognitoJwtAuthenticationConverter
                 email = cognitoUsername;
             }
 
-            boolean isFederated = cognitoUsername != null && !cognitoUsername.contains("@");
+            // Detectare robustă a utilizatorilor federați:
+            // - ID Token: claim-ul `identities` este prezent pentru orice user Google/OAuth
+            // - Access Token: cognitoUsername = "google_<id>" (fără "@")
+            // Combinăm ambele criterii pentru a acoperi ambele tipuri de token.
+            boolean hasFederatedIdentity = jwt.getClaim("identities") != null;
+            boolean isFederated = hasFederatedIdentity
+                    || (cognitoUsername != null && !cognitoUsername.contains("@"));
 
             String displayName = jwt.getClaimAsString("name");
             List<String> groups = jwt.getClaimAsStringList("cognito:groups");
@@ -50,8 +56,8 @@ public class CognitoJwtAuthenticationConverter
             String grantedRole = (dbRole.equals("professor") || dbRole.equals("teacher"))
                     ? "ROLE_PROFESSOR" : "ROLE_STUDENT";
 
-            log.debug("[JWT] sub={} email={} federat={} rol={} mongoId={}",
-                    sub, email, isFederated, grantedRole, user.getId());
+            log.debug("[JWT] sub={} email={} cognitoUsername={} federat={} hasFederatedIdentity={} rol={} mongoId={}",
+                    sub, email, cognitoUsername, isFederated, hasFederatedIdentity, grantedRole, user.getId());
 
             return new UsernamePasswordAuthenticationToken(
                     user.getId(), null,

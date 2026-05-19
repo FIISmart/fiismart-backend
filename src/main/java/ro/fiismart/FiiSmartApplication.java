@@ -10,3 +10,4 @@ public class FiiSmartApplication {
         SpringApplication.run(FiiSmartApplication.class, args);
     }
 }
+
