@@ -208,7 +208,10 @@ public class CourseManagementService {
                 .id(UUID.randomUUID().toString())
                 .moduleId(moduleId)
                 .title(req.getTitle())
-                .videoUrl(req.getVideoUrl())
+                .type(resolveLectureType(req.getType(), req.getContent(), req.getVideoUrl(), req.getPdfUrl()))
+                .content(resolveLectureContent(req.getContent(), req.getVideoUrl(), req.getPdfUrl()))
+                .videoUrl(resolveVideoUrl(req.getType(), req.getContent(), req.getVideoUrl()))
+                .pdfUrl(resolvePdfUrl(req.getType(), req.getContent(), req.getPdfUrl()))
                 .imageUrls(req.getImageUrls() != null ? req.getImageUrls() : new ArrayList<>())
                 .order(nextOrder)
                 .durationSecs(req.getDurationSecs())
@@ -244,7 +247,24 @@ public class CourseManagementService {
                 .filter(l -> lectureId.equals(l.getId())).findFirst().orElse(null);
 
         if (lecture != null && req.getTitle() != null) lecture.setTitle(req.getTitle());
-        if (lecture != null && req.getVideoUrl() != null) lecture.setVideoUrl(req.getVideoUrl());
+        if (lecture != null) {
+            String nextContent = resolveLectureContent(req.getContent(), req.getVideoUrl(), req.getPdfUrl());
+            String nextType = resolveLectureType(req.getType(), nextContent, req.getVideoUrl(), req.getPdfUrl());
+
+            if (req.getType() != null || !nextContent.isBlank()) lecture.setType(nextType);
+            if (!nextContent.isBlank()) lecture.setContent(nextContent);
+            if (req.getVideoUrl() != null || "video".equals(nextType)) {
+                lecture.setVideoUrl(resolveVideoUrl(nextType, nextContent, req.getVideoUrl()));
+            }
+            if (req.getPdfUrl() != null || "pdf".equals(nextType)) {
+                lecture.setPdfUrl(resolvePdfUrl(nextType, nextContent, req.getPdfUrl()));
+            }
+            if (req.getType() != null && !"pdf".equals(nextType)) {
+                lecture.setPdfUrl(null);
+            }
+            if (req.getImageUrls() != null) lecture.setImageUrls(req.getImageUrls());
+            if (req.getDurationSecs() > 0) lecture.setDurationSecs(req.getDurationSecs());
+        }
 
         mongoTemplate.updateFirst(
                 Query.query(Criteria.where("_id").is(courseId).and("modules.id").is(moduleId)),
@@ -275,5 +295,38 @@ public class CourseManagementService {
                 .filter(m -> moduleId.equals(m.getId()))
                 .findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("Module", moduleId));
+    }
+
+    private String resolveLectureContent(String content, String videoUrl, String pdfUrl) {
+        if (content != null) return content;
+        if (pdfUrl != null) return pdfUrl;
+        if (videoUrl != null) return videoUrl;
+        return "";
+    }
+
+    private String resolveLectureType(String type, String content, String videoUrl, String pdfUrl) {
+        if (type != null && !type.isBlank()) return type;
+        if (pdfUrl != null && !pdfUrl.isBlank()) return "pdf";
+
+        String source = resolveLectureContent(content, videoUrl, pdfUrl).toLowerCase(Locale.ROOT);
+        if (source.endsWith(".pdf")) return "pdf";
+        if (source.endsWith(".md") || source.endsWith(".markdown") || (!source.startsWith("http") && !source.isBlank())) {
+            return "markdown";
+        }
+        return "video";
+    }
+
+    private String resolveVideoUrl(String type, String content, String videoUrl) {
+        String resolvedType = resolveLectureType(type, content, videoUrl, null);
+        if (!"video".equals(resolvedType)) return videoUrl;
+        if (videoUrl != null) return videoUrl;
+        return content;
+    }
+
+    private String resolvePdfUrl(String type, String content, String pdfUrl) {
+        String resolvedType = resolveLectureType(type, content, null, pdfUrl);
+        if (!"pdf".equals(resolvedType)) return pdfUrl;
+        if (pdfUrl != null) return pdfUrl;
+        return content;
     }
 }

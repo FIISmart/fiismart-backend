@@ -13,5 +13,6 @@ public class Answer {
 
     private String questionId;
     private int selectedIdx;
+    private String writtenAnswer;
     private boolean correct;
 }

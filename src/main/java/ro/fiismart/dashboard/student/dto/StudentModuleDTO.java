@@ -14,4 +14,5 @@ public class StudentModuleDTO {
     private String quizId;
     private String quizStatus;
     private Integer quizLatestScore;
+    private StudentQuizStatusDTO quiz;
 }

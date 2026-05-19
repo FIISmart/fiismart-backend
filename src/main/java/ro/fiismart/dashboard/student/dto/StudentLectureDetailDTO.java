@@ -8,7 +8,10 @@ import java.util.List;
 public class StudentLectureDetailDTO {
     private String lectureId;
     private String title;
+    private String type;
+    private String content;
     private String videoUrl;
+    private String pdfUrl;
     private List<String> imageUrls;
     private int order;
     private int durationSecs;
@@ -16,4 +19,5 @@ public class StudentLectureDetailDTO {
     private int watchedPercent;
     private int positionSecs;
     private boolean completed;
+    private StudentQuizStatusDTO quiz;
 }

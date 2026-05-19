@@ -15,13 +15,16 @@ public class StudentCourseService {
     private final CourseRepository courseRepository;
     private final UserRepository userRepository;
     private final EnrollmentRepository enrollmentRepository;
+    private final StudentQuizService studentQuizService;
 
     public StudentCourseService(CourseRepository courseRepository,
                                 UserRepository userRepository,
-                                EnrollmentRepository enrollmentRepository) {
+                                EnrollmentRepository enrollmentRepository,
+                                StudentQuizService studentQuizService) {
         this.courseRepository = courseRepository;
         this.userRepository = userRepository;
         this.enrollmentRepository = enrollmentRepository;
+        this.studentQuizService = studentQuizService;
     }
 
     public StudentCourseHeaderDTO getHeader(String studentId, String courseId) {
@@ -50,6 +53,7 @@ public class StudentCourseService {
         dto.setEnrollmentCount(course.getEnrollmentCount());
         dto.setEnrolled(enrollment != null);
         dto.setOverallProgress(enrollment != null ? enrollment.getOverallProgress() : 0);
+        dto.setFinalQuiz(studentQuizService.getQuizStatus(studentId, courseId));
         return dto;
     }
 }

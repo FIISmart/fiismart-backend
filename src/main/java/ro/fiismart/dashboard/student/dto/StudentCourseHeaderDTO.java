@@ -18,4 +18,5 @@ public class StudentCourseHeaderDTO {
     private int enrollmentCount;
     private boolean enrolled;
     private int overallProgress;
+    private StudentQuizStatusDTO finalQuiz;
 }
