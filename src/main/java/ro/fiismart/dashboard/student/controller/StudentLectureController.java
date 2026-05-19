@@ -1,5 +1,6 @@
 package ro.fiismart.dashboard.student.controller;
 
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 import ro.fiismart.dashboard.student.dto.*;
 import ro.fiismart.dashboard.student.service.StudentLectureService;
@@ -33,7 +34,7 @@ public class StudentLectureController {
     public StudentLectureProgressResponse updateProgress(@PathVariable String studentId,
                                                           @PathVariable String courseId,
                                                           @PathVariable String lectureId,
-                                                          @RequestBody StudentLectureProgressRequest req) {
+                                                          @Valid @RequestBody StudentLectureProgressRequest req) {
         return studentLectureService.updateLectureProgress(studentId, courseId, lectureId, req);
     }
 }
