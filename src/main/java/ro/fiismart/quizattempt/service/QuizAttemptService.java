@@ -7,12 +7,14 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import ro.fiismart.common.exception.ResourceNotFoundException;
+import ro.fiismart.common.model.Answer;
 import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.CourseModule;
 import ro.fiismart.common.model.Enrollment;
 import ro.fiismart.common.model.Lecture;
 import ro.fiismart.common.model.LectureProgressEntry;
 import ro.fiismart.common.model.ModuleQuiz;
+import ro.fiismart.common.model.ModuleQuizQuestion;
 import ro.fiismart.common.model.QuizAttempt;
 import ro.fiismart.common.repository.CourseRepository;
 import ro.fiismart.common.repository.EnrollmentRepository;
@@ -40,20 +42,85 @@ public class QuizAttemptService {
     private final ModuleQuizRepository moduleQuizRepository;
     private final MongoTemplate mongoTemplate;
 
-    public QuizAttemptResponse create(QuizAttemptRequest request) {
+    /**
+     * Creates a quiz attempt. The score and pass/fail are computed server-side
+     * from the submitted {@code answers} against the canonical quiz definition.
+     * The {@code score} / {@code passed} / {@code correct} fields supplied by
+     * the client are <b>ignored</b>. The {@code studentId} is passed in by the
+     * controller from the authenticated principal — the request body field is
+     * also ignored.
+     */
+    public QuizAttemptResponse create(String studentId, QuizAttemptRequest request) {
+        ModuleQuiz quiz = moduleQuizRepository.findById(request.getQuizId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Quiz not found: " + request.getQuizId()));
+
+        List<Answer> submitted = request.getAnswers() != null
+                ? request.getAnswers() : new ArrayList<>();
+        List<Answer> graded = gradeAnswers(quiz, submitted);
+
+        int passingScore = quiz.getPassingScore() > 0 ? quiz.getPassingScore() : 70;
+        int score = computeScore(graded);
+        boolean passed = score >= passingScore;
+
         QuizAttempt attempt = QuizAttempt.builder()
                 .quizId(request.getQuizId())
                 .courseId(request.getCourseId())
-                .studentId(request.getStudentId())
+                .studentId(studentId)
                 .attemptedAt(new Date())
-                .score(request.getScore())
-                .passed(request.isPassed())
+                .score(score)
+                .passed(passed)
                 .timeTakenSecs(request.getTimeTakenSecs())
-                .answers(request.getAnswers() != null ? request.getAnswers() : new ArrayList<>())
+                .answers(graded)
                 .build();
         QuizAttempt saved = quizAttemptRepository.save(attempt);
-        refreshEnrollmentProgress(request.getStudentId(), request.getCourseId());
+        refreshEnrollmentProgress(studentId, request.getCourseId());
         return toResponse(saved);
+    }
+
+    /**
+     * Compares each submitted answer against the canonical quiz question and
+     * stamps {@link Answer#setCorrect(boolean)} based on the question's type.
+     * Returns a new list (never mutates the input). Submitted answers whose
+     * {@code questionId} doesn't match any quiz question are kept but marked
+     * incorrect.
+     */
+    private List<Answer> gradeAnswers(ModuleQuiz quiz, List<Answer> submitted) {
+        Map<String, ModuleQuizQuestion> byId = new HashMap<>();
+        if (quiz.getQuestions() != null) {
+            for (ModuleQuizQuestion q : quiz.getQuestions()) {
+                if (q != null && q.getId() != null) byId.put(q.getId(), q);
+            }
+        }
+        List<Answer> graded = new ArrayList<>(submitted.size());
+        for (Answer a : submitted) {
+            ModuleQuizQuestion q = a != null ? byId.get(a.getQuestionId()) : null;
+            boolean correct = false;
+            if (q != null && a != null) {
+                if ("written".equalsIgnoreCase(q.getType())) {
+                    String expected = q.getCorrectText();
+                    String got = a.getWrittenAnswer();
+                    correct = expected != null && got != null
+                            && expected.trim().equalsIgnoreCase(got.trim());
+                } else {
+                    correct = q.getCorrectIdx() != null
+                            && a.getSelectedIdx() == q.getCorrectIdx();
+                }
+            }
+            graded.add(Answer.builder()
+                    .questionId(a != null ? a.getQuestionId() : null)
+                    .selectedIdx(a != null ? a.getSelectedIdx() : -1)
+                    .writtenAnswer(a != null ? a.getWrittenAnswer() : null)
+                    .correct(correct)
+                    .build());
+        }
+        return graded;
+    }
+
+    private int computeScore(List<Answer> graded) {
+        if (graded == null || graded.isEmpty()) return 0;
+        long correct = graded.stream().filter(Answer::isCorrect).count();
+        return (int) Math.round((correct * 100.0) / graded.size());
     }
 
     public QuizAttemptResponse findById(String attemptId) {
