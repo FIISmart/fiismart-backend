@@ -1,7 +1,5 @@
 package ro.fiismart.dashboard.student.controller;
 
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import ro.fiismart.dashboard.student.dto.*;
 import ro.fiismart.dashboard.student.service.*;
@@ -35,56 +33,42 @@ public class StudentDashboardController {
     }
 
     @GetMapping("/{studentId}/stats")
-    public StatsDTO getStats(@AuthenticationPrincipal String authenticatedStudentId, @PathVariable String studentId) {
-        validateStudent(authenticatedStudentId, studentId);
+    public StatsDTO getStats(@PathVariable String studentId) {
         return statsService.getStats(studentId);
     }
 
     @GetMapping("/{studentId}/courses")
-    public List<CourseSummaryDTO> getCourses(@AuthenticationPrincipal String authenticatedStudentId, @PathVariable String studentId) {
-        validateStudent(authenticatedStudentId, studentId);
+    public List<CourseSummaryDTO> getCourses(@PathVariable String studentId) {
         return coursesService.getCourses(studentId);
     }
 
     @GetMapping("/{studentId}/initials")
-    public InitialsDTO getInitials(@AuthenticationPrincipal String authenticatedStudentId, @PathVariable String studentId) {
-        validateStudent(authenticatedStudentId, studentId);
+    public InitialsDTO getInitials(@PathVariable String studentId) {
         return initialsService.getInitials(studentId);
     }
 
     @GetMapping("/{studentId}/recommendations")
-    public RecommendationDTO getRecommendation(@AuthenticationPrincipal String authenticatedStudentId, @PathVariable String studentId) {
-        validateStudent(authenticatedStudentId, studentId);
+    public RecommendationDTO getRecommendation(@PathVariable String studentId) {
         return recommendationService.getRecommendation(studentId);
     }
 
     @GetMapping("/{studentId}/quizzes")
-    public List<QuizStudentDTO> getQuizzes(@AuthenticationPrincipal String authenticatedStudentId, @PathVariable String studentId) {
-        validateStudent(authenticatedStudentId, studentId);
+    public List<QuizStudentDTO> getQuizzes(@PathVariable String studentId) {
         return dashboardService.getQuizzesForStudent(studentId);
     }
 
     @GetMapping("/{studentId}/continue")
-    public ContinueLearningDTO getContinueLearning(@AuthenticationPrincipal String authenticatedStudentId, @PathVariable String studentId) {
-        validateStudent(authenticatedStudentId, studentId);
+    public ContinueLearningDTO getContinueLearning(@PathVariable String studentId) {
         return dashboardService.getLastAccessedCourse(studentId);
     }
 
     @GetMapping("/{studentId}/answers")
-    public List<StudentAnswerDTO> getAnswers(@AuthenticationPrincipal String authenticatedStudentId, @PathVariable String studentId) {
-        validateStudent(authenticatedStudentId, studentId);
+    public List<StudentAnswerDTO> getAnswers(@PathVariable String studentId) {
         return dashboardService.getAnswersForStudent(studentId);
     }
 
     @GetMapping("/{studentId}/name")
-    public UserNameDTO getName(@AuthenticationPrincipal String authenticatedStudentId, @PathVariable String studentId) {
-        validateStudent(authenticatedStudentId, studentId);
+    public UserNameDTO getName(@PathVariable String studentId) {
         return dashboardService.getStudentName(studentId);
-    }
-
-    private void validateStudent(String authenticatedStudentId, String studentId) {
-        if (!authenticatedStudentId.equals(studentId)) {
-            throw new AccessDeniedException("Access denied");
-        }
     }
 }

@@ -348,45 +348,24 @@ public class StudentLectureService {
     }
 
     private String resolveLectureType(Lecture lecture) {
-        if (lecture.getType() != null && !lecture.getType().isBlank()) {
-            String t = lecture.getType().toLowerCase();
-            if (t.equals("document")) return "pdf";
-            if (t.equals("text")) return "markdown";
-            return t;
-        }
-        
-        String pdfUrl = lecture.getPdfUrl() != null ? lecture.getPdfUrl() : "";
-        String content = lecture.getContent() != null ? lecture.getContent() : "";
-        String videoUrl = lecture.getVideoUrl() != null ? lecture.getVideoUrl() : "";
-        
-        if (!pdfUrl.isBlank() || content.toLowerCase().endsWith(".pdf") || content.contains("/api/v1/files/")) {
-            return "pdf";
-        }
-        
-        if (content.toLowerCase().endsWith(".md") || content.toLowerCase().endsWith(".markdown") || 
-            (content.length() > 0 && !content.startsWith("http") && !content.startsWith("/"))) {
+        if (lecture.getType() != null && !lecture.getType().isBlank()) return lecture.getType();
+        String content = resolveLectureContent(lecture).toLowerCase(Locale.ROOT);
+        if (lecture.getPdfUrl() != null || content.endsWith(".pdf")) return "pdf";
+        if (content.endsWith(".md") || content.endsWith(".markdown") || (!content.startsWith("http") && !content.isBlank())) {
             return "markdown";
         }
-        
-        if (!videoUrl.isBlank()) return "video";
-        
-        return "video"; // Fallback to video
+        return "video";
     }
 
     private String resolveLectureContent(Lecture lecture) {
-        if (lecture.getContent() != null && !lecture.getContent().isBlank()) return lecture.getContent();
-        if (lecture.getPdfUrl() != null && !lecture.getPdfUrl().isBlank()) return lecture.getPdfUrl();
+        if (lecture.getContent() != null) return lecture.getContent();
+        if (lecture.getPdfUrl() != null) return lecture.getPdfUrl();
         return lecture.getVideoUrl() != null ? lecture.getVideoUrl() : "";
     }
 
     private String resolvePdfUrl(Lecture lecture) {
-        if (lecture.getPdfUrl() != null && !lecture.getPdfUrl().isBlank()) return lecture.getPdfUrl();
-        String type = resolveLectureType(lecture);
-        if ("pdf".equals(type)) {
-            String content = resolveLectureContent(lecture);
-            if (content.startsWith("http") || content.startsWith("/")) return content;
-        }
-        return null;
+        if (lecture.getPdfUrl() != null) return lecture.getPdfUrl();
+        return "pdf".equals(resolveLectureType(lecture)) ? resolveLectureContent(lecture) : null;
     }
 
     private void updateLectureDurationIfNeeded(String courseId, Course course, Lecture lecture, Integer durationSecs) {

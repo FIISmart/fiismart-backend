@@ -4,8 +4,6 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import ro.fiismart.quizattempt.dto.QuizAttemptRequest;
 import ro.fiismart.quizattempt.dto.QuizAttemptResponse;
@@ -22,10 +20,7 @@ public class QuizAttemptController {
     private final QuizAttemptService quizAttemptService;
 
     @PostMapping
-    public ResponseEntity<QuizAttemptResponse> create(@AuthenticationPrincipal String authenticatedStudentId,
-                                                       @Valid @RequestBody QuizAttemptRequest request) {
-        // Force the studentId to be the authenticated user
-        request.setStudentId(authenticatedStudentId);
+    public ResponseEntity<QuizAttemptResponse> create(@Valid @RequestBody QuizAttemptRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(quizAttemptService.create(request));
     }
 
@@ -35,11 +30,7 @@ public class QuizAttemptController {
     }
 
     @GetMapping("/student/{studentId}")
-    public ResponseEntity<List<QuizAttemptResponse>> findByStudent(@AuthenticationPrincipal String authenticatedStudentId,
-                                                                    @PathVariable String studentId) {
-        if (!authenticatedStudentId.equals(studentId)) {
-            throw new AccessDeniedException("Access denied to other student's attempts");
-        }
+    public ResponseEntity<List<QuizAttemptResponse>> findByStudent(@PathVariable String studentId) {
         return ResponseEntity.ok(quizAttemptService.findByStudentId(studentId));
     }
 
@@ -50,23 +41,15 @@ public class QuizAttemptController {
 
     @GetMapping("/student/{studentId}/quiz/{quizId}")
     public ResponseEntity<List<QuizAttemptResponse>> findByStudentAndQuiz(
-            @AuthenticationPrincipal String authenticatedStudentId,
             @PathVariable String studentId,
             @PathVariable String quizId) {
-        if (!authenticatedStudentId.equals(studentId)) {
-            throw new AccessDeniedException("Access denied to other student's attempts");
-        }
         return ResponseEntity.ok(quizAttemptService.findByStudentAndQuiz(studentId, quizId));
     }
 
     @GetMapping("/student/{studentId}/quiz/{quizId}/latest")
     public ResponseEntity<QuizAttemptResponse> findLatest(
-            @AuthenticationPrincipal String authenticatedStudentId,
             @PathVariable String studentId,
             @PathVariable String quizId) {
-        if (!authenticatedStudentId.equals(studentId)) {
-            throw new AccessDeniedException("Access denied to other student's attempts");
-        }
         return ResponseEntity.ok(quizAttemptService.findLatestAttempt(studentId, quizId));
     }
 
@@ -82,12 +65,8 @@ public class QuizAttemptController {
 
     @GetMapping("/student/{studentId}/quiz/{quizId}/passed")
     public ResponseEntity<Map<String, Boolean>> hasStudentPassed(
-            @AuthenticationPrincipal String authenticatedStudentId,
             @PathVariable String studentId,
             @PathVariable String quizId) {
-        if (!authenticatedStudentId.equals(studentId)) {
-            throw new AccessDeniedException("Access denied");
-        }
         return ResponseEntity.ok(Map.of("passed", quizAttemptService.hasStudentPassedQuiz(studentId, quizId)));
     }
 
