@@ -7,6 +7,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class FiiSmartApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(FiiSmartApplication.class, args);
+        SpringApplication.run(FiiSmartApplication.class, args );
     }
 }
