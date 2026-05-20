@@ -27,18 +27,17 @@ public class AiConfig {
     }
 
     /**
-     * Multipart cap aligned with PdfAiService's 15 MB PDF limit so both
-     * paths (parser-level and service-level) converge on the same client
-     * error. File parts > 15 MB get rejected at the parser → 413
-     * PDF_TOO_LARGE; the service-level check then acts as defense in
-     * depth. The 16 MB request cap leaves headroom for the small form
-     * fields (questionCount, language).
+     * 50 MB multipart cap — accommodates the lecture-file upload flow
+     * (PDF/DOC/ZIP/...) at /api/v1/files/lecture which caps at 50 MB.
+     * The AI flow's own 15 MB check still rejects oversize PDFs at the
+     * service layer with a clear 400 message, so the looser parser cap
+     * does not weaken AI input validation.
      */
     @Bean
     public MultipartConfigElement multipartConfigElement() {
         MultipartConfigFactory factory = new MultipartConfigFactory();
-        factory.setMaxFileSize(DataSize.ofMegabytes(15));
-        factory.setMaxRequestSize(DataSize.ofMegabytes(16));
+        factory.setMaxFileSize(DataSize.ofMegabytes(50));
+        factory.setMaxRequestSize(DataSize.ofMegabytes(50));
         return factory.createMultipartConfig();
     }
 }
