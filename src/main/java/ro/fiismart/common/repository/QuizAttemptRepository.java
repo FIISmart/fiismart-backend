@@ -17,6 +17,8 @@ public interface QuizAttemptRepository extends MongoRepository<QuizAttempt, Stri
 
     List<QuizAttempt> findByStudentIdAndCourseId(String studentId, String courseId);
 
+    Optional<QuizAttempt> findFirstByStudentIdAndQuizIdAndStatus(String studentId, String quizId, String status);
+
     Optional<QuizAttempt> findTopByStudentIdAndQuizIdOrderByAttemptedAtDesc(String studentId, String quizId);
 
     long countByStudentIdAndQuizId(String studentId, String quizId);

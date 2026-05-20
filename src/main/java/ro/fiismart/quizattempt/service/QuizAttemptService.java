@@ -1,18 +1,23 @@
 package ro.fiismart.quizattempt.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
+import ro.fiismart.common.exception.ConflictException;
+import ro.fiismart.common.exception.ForbiddenException;
 import ro.fiismart.common.exception.ResourceNotFoundException;
+import ro.fiismart.common.model.Answer;
 import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.CourseModule;
 import ro.fiismart.common.model.Enrollment;
 import ro.fiismart.common.model.Lecture;
 import ro.fiismart.common.model.LectureProgressEntry;
 import ro.fiismart.common.model.ModuleQuiz;
+import ro.fiismart.common.model.ModuleQuizQuestion;
 import ro.fiismart.common.model.QuizAttempt;
 import ro.fiismart.common.repository.CourseRepository;
 import ro.fiismart.common.repository.EnrollmentRepository;
@@ -20,7 +25,10 @@ import ro.fiismart.common.repository.ModuleQuizRepository;
 import ro.fiismart.common.repository.QuizAttemptRepository;
 import ro.fiismart.quizattempt.dto.QuizAttemptRequest;
 import ro.fiismart.quizattempt.dto.QuizAttemptResponse;
+import ro.fiismart.quizattempt.dto.StartQuizAttemptResponse;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -30,9 +38,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class QuizAttemptService {
+
+    /** Wall-clock slack on the deadline so a borderline-late submit still counts. */
+    private static final int GRACE_SECONDS = 5;
 
     private final QuizAttemptRepository quizAttemptRepository;
     private final CourseRepository courseRepository;
@@ -40,6 +52,149 @@ public class QuizAttemptService {
     private final ModuleQuizRepository moduleQuizRepository;
     private final MongoTemplate mongoTemplate;
 
+    // ── New lifecycle flow (start → submit / abandon) ────────────────────────
+
+    /**
+     * Begin a fresh attempt for {@code studentId} on {@code quizId}.
+     *
+     * <p>Idempotent: if an {@code IN_PROGRESS} attempt already exists for this
+     * (student, quiz) pair, returns it instead of creating a duplicate. This
+     * stops a double-click on the "Start" button from spawning two stopwatches.</p>
+     */
+    public StartQuizAttemptResponse startAttempt(String studentId, String quizId) {
+        ModuleQuiz quiz = moduleQuizRepository.findById(quizId)
+                .orElseThrow(() -> new ResourceNotFoundException("Quiz not found: " + quizId));
+
+        // Idempotency guard — re-use an already-running attempt.
+        QuizAttempt existing = quizAttemptRepository
+                .findFirstByStudentIdAndQuizIdAndStatus(studentId, quizId, "IN_PROGRESS")
+                .orElse(null);
+        if (existing != null) {
+            return new StartQuizAttemptResponse(
+                    existing.getId(),
+                    existing.getStartedAt(),
+                    // quiz.timeLimit is in MINUTES (see QuizRequest defaulting to 30).
+                    quiz.getTimeLimit() * 60,
+                    existing.getStatus()
+            );
+        }
+
+        Instant now = Instant.now();
+        QuizAttempt attempt = QuizAttempt.builder()
+                .quizId(quizId)
+                .courseId(quiz.getCourseId())  // derive from quiz, never trust client
+                .studentId(studentId)
+                .attemptedAt(Date.from(now))
+                .startedAt(now)
+                .status("IN_PROGRESS")
+                .score(0)
+                .passed(false)
+                .answers(new ArrayList<>())
+                .build();
+        QuizAttempt saved = quizAttemptRepository.save(attempt);
+
+        // quiz.timeLimit is MINUTES (see ro.fiismart.quiz.dto.QuizRequest:15 default=30).
+        // Convert exactly once, here, so every downstream caller speaks seconds.
+        int timeLimitSeconds = quiz.getTimeLimit() * 60;
+
+        return new StartQuizAttemptResponse(
+                saved.getId(),
+                saved.getStartedAt(),
+                timeLimitSeconds,
+                saved.getStatus()
+        );
+    }
+
+    /**
+     * Finalize an attempt. Server-grades the answers (clients cannot tell us
+     * their score), enforces ownership, status transitions, and the deadline
+     * (with a small grace window). Also refreshes the student's overall
+     * course progress as a side-effect.
+     */
+    public QuizAttemptResponse submitAttempt(String studentId, String attemptId, List<Answer> clientAnswers) {
+        QuizAttempt attempt = quizAttemptRepository.findById(attemptId)
+                .orElseThrow(() -> new ResourceNotFoundException("QuizAttempt not found: " + attemptId));
+
+        if (!Objects.equals(attempt.getStudentId(), studentId)) {
+            throw new ForbiddenException("Not your attempt");
+        }
+
+        // Status transition guard (defense in depth — DB constraint can't express this).
+        if ("SUBMITTED".equals(attempt.getStatus())) {
+            throw new ConflictException("Already submitted");
+        }
+        if ("ABANDONED".equals(attempt.getStatus())) {
+            throw new ConflictException("Attempt was abandoned");
+        }
+
+        ModuleQuiz quiz = moduleQuizRepository.findById(attempt.getQuizId())
+                .orElseThrow(() -> new ResourceNotFoundException("Quiz not found: " + attempt.getQuizId()));
+
+        // Tolerate legacy attempts that pre-date this feature and have no startedAt.
+        Instant now = Instant.now();
+        Duration elapsed = attempt.getStartedAt() != null
+                ? Duration.between(attempt.getStartedAt(), now)
+                : Duration.ZERO;
+
+        int durationSeconds = quiz.getTimeLimit() * 60;  // MINUTES → seconds
+        boolean expired = elapsed.toSeconds() > (long) durationSeconds + GRACE_SECONDS;
+
+        // SERVER-SIDE GRADING. Clients never supply score/passed.
+        List<Answer> graded = gradeAnswers(quiz, clientAnswers != null ? clientAnswers : new ArrayList<>());
+        int score = computeScore(quiz, graded);
+        boolean passed = score >= quiz.getPassingScore();
+
+        attempt.setAnswers(graded);
+        attempt.setScore(score);
+        attempt.setPassed(passed);
+        attempt.setTimeTakenSecs((int) Math.min(elapsed.toSeconds(), Integer.MAX_VALUE));
+        attempt.setAttemptedAt(Date.from(now));
+        attempt.setStatus(expired ? "EXPIRED" : "SUBMITTED");
+
+        QuizAttempt saved = quizAttemptRepository.save(attempt);
+
+        // Preserve the same side-effect as legacy create(): keep enrollment in sync.
+        refreshEnrollmentProgress(saved.getStudentId(), saved.getCourseId());
+
+        return toResponse(saved);
+    }
+
+    /**
+     * Mark an {@code IN_PROGRESS} attempt as {@code ABANDONED}. Idempotent:
+     * already-terminal attempts (SUBMITTED, ABANDONED, EXPIRED) silently no-op.
+     */
+    public void abandonAttempt(String studentId, String attemptId) {
+        QuizAttempt attempt = quizAttemptRepository.findById(attemptId)
+                .orElseThrow(() -> new ResourceNotFoundException("QuizAttempt not found: " + attemptId));
+
+        if (!Objects.equals(attempt.getStudentId(), studentId)) {
+            throw new ForbiddenException("Not your attempt");
+        }
+
+        String status = attempt.getStatus();
+        if ("SUBMITTED".equals(status) || "ABANDONED".equals(status) || "EXPIRED".equals(status)) {
+            return;  // already terminal
+        }
+
+        Instant now = Instant.now();
+        if (attempt.getStartedAt() != null) {
+            attempt.setTimeTakenSecs((int) Duration.between(attempt.getStartedAt(), now).toSeconds());
+        }
+        attempt.setStatus("ABANDONED");
+        quizAttemptRepository.save(attempt);
+    }
+
+    // ── Legacy one-shot create (kept for backwards compatibility) ────────────
+
+    /**
+     * Legacy one-shot create — accepts client-supplied score/passed. Preserved
+     * so existing FE that posts a finished attempt directly still works.
+     *
+     * @deprecated New code MUST use {@link #startAttempt(String, String)} +
+     *             {@link #submitAttempt(String, String, List)}; only those
+     *             enforce server-side grading and the timer.
+     */
+    @Deprecated
     public QuizAttemptResponse create(QuizAttemptRequest request) {
         QuizAttempt attempt = QuizAttempt.builder()
                 .quizId(request.getQuizId())
@@ -104,6 +259,76 @@ public class QuizAttemptService {
 
     public void deleteById(String attemptId) {
         quizAttemptRepository.deleteById(attemptId);
+    }
+
+    // ── Server-side grading helpers ──────────────────────────────────────────
+
+    /**
+     * Grade each submitted answer against the canonical quiz definition.
+     * Returns a fresh list — never mutates the client-supplied input — and
+     * sets {@code correct} on each {@link Answer} based on the question's
+     * {@code correctIdx} / {@code correctText}. Answers for unknown question
+     * IDs are dropped (defensive: ignore noise rather than crash).
+     */
+    private List<Answer> gradeAnswers(ModuleQuiz quiz, List<Answer> clientAnswers) {
+        Map<String, ModuleQuizQuestion> byId = new HashMap<>();
+        if (quiz.getQuestions() != null) {
+            for (ModuleQuizQuestion q : quiz.getQuestions()) {
+                if (q != null && q.getId() != null) byId.put(q.getId(), q);
+            }
+        }
+
+        List<Answer> graded = new ArrayList<>(clientAnswers.size());
+        for (Answer in : clientAnswers) {
+            if (in == null || in.getQuestionId() == null) continue;
+            ModuleQuizQuestion q = byId.get(in.getQuestionId());
+            if (q == null) continue;  // unknown question — drop silently
+
+            boolean correct = false;
+            if ("written".equalsIgnoreCase(q.getType())) {
+                String expected = q.getCorrectText() == null ? "" : q.getCorrectText().trim();
+                String given = in.getWrittenAnswer() == null ? "" : in.getWrittenAnswer().trim();
+                correct = !expected.isEmpty() && expected.equalsIgnoreCase(given);
+            } else {
+                // default to multiple_choice
+                correct = q.getCorrectIdx() != null && q.getCorrectIdx() == in.getSelectedIdx();
+            }
+
+            graded.add(Answer.builder()
+                    .questionId(in.getQuestionId())
+                    .selectedIdx(in.getSelectedIdx())
+                    .writtenAnswer(in.getWrittenAnswer())
+                    .correct(correct)
+                    .build());
+        }
+        return graded;
+    }
+
+    /**
+     * Sum the points of correctly-answered questions and express as a
+     * percentage of total possible points. Returns {@code 0} when the quiz
+     * has no scorable questions.
+     */
+    private int computeScore(ModuleQuiz quiz, List<Answer> gradedAnswers) {
+        if (quiz.getQuestions() == null || quiz.getQuestions().isEmpty()) return 0;
+
+        Map<String, Integer> pointsByQ = new HashMap<>();
+        int totalPoints = 0;
+        for (ModuleQuizQuestion q : quiz.getQuestions()) {
+            if (q == null || q.getId() == null) continue;
+            int pts = Math.max(q.getPoints(), 0);
+            pointsByQ.put(q.getId(), pts);
+            totalPoints += pts;
+        }
+        if (totalPoints == 0) return 0;
+
+        int earned = 0;
+        for (Answer a : gradedAnswers) {
+            if (a == null || !a.isCorrect()) continue;
+            Integer pts = pointsByQ.get(a.getQuestionId());
+            if (pts != null) earned += pts;
+        }
+        return (int) Math.round(100.0 * earned / totalPoints);
     }
 
     private QuizAttemptResponse toResponse(QuizAttempt a) {
