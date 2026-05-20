@@ -7,6 +7,8 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import ro.fiismart.ai.client.GeminiException;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 
 import java.util.ArrayList;
@@ -108,6 +110,23 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleIllegalState(IllegalStateException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(Map.of("message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(GeminiException.class)
+    public ResponseEntity<Map<String, String>> handleGemini(GeminiException ex) {
+        // Do NOT log the cause's stack trace — upstream exceptions can carry the
+        // request URI in their getMessage()/toString(), and Gemini's URI used to
+        // include the API key as a query param. Header-based auth + cause-free
+        // logging both defend against that leak path.
+        log.warn("Gemini upstream error: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(Map.of("message", "AI service unavailable", "code", "AI_UPSTREAM_ERROR"));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, String>> handleMaxUpload(MaxUploadSizeExceededException ex) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(Map.of("message", "Fisierul depaseste limita de 15 MB", "code", "PDF_TOO_LARGE"));
     }
 
     @ExceptionHandler(Exception.class)
