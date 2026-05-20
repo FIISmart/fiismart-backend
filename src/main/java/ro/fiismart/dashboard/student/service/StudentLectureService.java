@@ -72,6 +72,9 @@ public class StudentLectureService {
     }
 
     public StudentLectureDetailDTO getLectureDetail(String studentId, String courseId, String lectureId) {
+        if (lectureId == null || lectureId.equals("undefined") || lectureId.isBlank()) {
+            throw new RuntimeException("Lecture ID invalid: " + lectureId);
+        }
         Course course = courseRepository.findById(courseId)
                 .orElseThrow(() -> new RuntimeException("Course not found: " + courseId));
 
@@ -108,6 +111,9 @@ public class StudentLectureService {
     public StudentLectureProgressResponse updateLectureProgress(String studentId, String courseId,
                                                                 String lectureId,
                                                                 StudentLectureProgressRequest request) {
+        if (lectureId == null || lectureId.equals("undefined") || lectureId.isBlank()) {
+            throw new RuntimeException("Lecture ID invalid: " + lectureId);
+        }
         Course course = courseRepository.findById(courseId)
                 .orElseThrow(() -> new RuntimeException("Course not found: " + courseId));
 
@@ -341,7 +347,7 @@ public class StudentLectureService {
         for (CourseModule module : course.getModules()) {
             if (module.getLectures() == null) continue;
             for (Lecture lecture : module.getLectures()) {
-                if (lectureId.equals(lecture.getId())) return lecture;
+                if (lecture.getId() != null && lectureId.equals(lecture.getId())) return lecture;
             }
         }
         return null;

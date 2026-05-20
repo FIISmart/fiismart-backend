@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import ro.fiismart.common.model.LectureProgressEntry;
 import ro.fiismart.enrollment.dto.EnrollmentRequest;
@@ -90,6 +91,27 @@ public class EnrollmentController {
             @PathVariable String courseId) {
         enrollmentService.deleteByStudentAndCourse(studentId, courseId);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/me/{courseId}/status")
+    public ResponseEntity<Map<String, Boolean>> myEnrollmentStatus(
+            @PathVariable String courseId,
+            @AuthenticationPrincipal String userId) {
+        boolean enrolled = userId != null && enrollmentService.isEnrolled(userId, courseId);
+        return ResponseEntity.ok(Map.of("enrolled", enrolled));
+    }
+
+    @PostMapping("/me/{courseId}")
+    public ResponseEntity<EnrollmentResponse> enrollMe(
+            @PathVariable String courseId,
+            @AuthenticationPrincipal String userId) {
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        EnrollmentRequest req = new EnrollmentRequest();
+        req.setStudentId(userId);
+        req.setCourseId(courseId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(enrollmentService.create(req));
     }
 
     @GetMapping("/exists/student/{studentId}/course/{courseId}")

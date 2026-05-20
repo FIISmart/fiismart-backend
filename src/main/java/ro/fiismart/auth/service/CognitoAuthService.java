@@ -387,8 +387,14 @@ public class CognitoAuthService {
         String lastName  = spaceIdx >= 0 ? displayName.substring(spaceIdx + 1) : "";
 
         String rawRole = user.getRole() != null ? user.getRole().toLowerCase() : "student";
-        String normalizedRole = (rawRole.equals("professor") || rawRole.equals("teacher"))
-                ? "PROFESSOR" : "STUDENT";
+        String normalizedRole;
+        if (rawRole.equals("admin")) {
+            normalizedRole = "ADMIN";
+        } else if (rawRole.equals("professor") || rawRole.equals("teacher")) {
+            normalizedRole = "PROFESSOR";
+        } else {
+            normalizedRole = "STUDENT";
+        }
 
         return UserResponse.builder()
                 .id(user.getId())

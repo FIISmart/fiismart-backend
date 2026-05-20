@@ -1,34 +1,45 @@
 package ro.fiismart.dashboard.student.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import ro.fiismart.common.model.Comment;
+import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.User;
 import ro.fiismart.common.repository.CommentRepository;
+import ro.fiismart.common.repository.CourseRepository;
 import ro.fiismart.common.repository.UserRepository;
 import ro.fiismart.dashboard.student.dto.CommentCreateRequest;
 import ro.fiismart.dashboard.student.dto.StudentCommentDTO;
+import ro.fiismart.notification.service.NotificationService;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class StudentCommentService {
 
     private final CommentRepository commentRepository;
     private final UserRepository userRepository;
     private final MongoTemplate mongoTemplate;
+    private final CourseRepository courseRepository;
+    private final NotificationService notificationService;
 
     public StudentCommentService(CommentRepository commentRepository,
                                  UserRepository userRepository,
-                                 MongoTemplate mongoTemplate) {
+                                 MongoTemplate mongoTemplate,
+                                 CourseRepository courseRepository,
+                                 NotificationService notificationService) {
         this.commentRepository = commentRepository;
         this.userRepository = userRepository;
         this.mongoTemplate = mongoTemplate;
+        this.courseRepository = courseRepository;
+        this.notificationService = notificationService;
     }
 
     public List<StudentCommentDTO> getCommentsThreaded(String studentId, String lectureId) {
@@ -75,7 +86,21 @@ public class StudentCommentService {
 
         Comment saved = commentRepository.save(comment);
         User author = userRepository.findById(studentId).orElse(null);
+        sendNewCommentNotification(author, courseId, lectureId);
         return convertToDTO(saved, studentId, author);
+    }
+
+    private void sendNewCommentNotification(User author, String courseId, String lectureId) {
+        try {
+            Course course = courseRepository.findById(courseId).orElse(null);
+            if (course == null || course.getTeacherId() == null) return;
+            String authorName = author != null && author.getDisplayName() != null
+                    ? author.getDisplayName() : "Un student";
+            notificationService.createCommentNotification(
+                    course.getTeacherId(), authorName, course.getTitle(), courseId, lectureId);
+        } catch (Exception e) {
+            log.warn("Nu s-a putut trimite notificarea de comentariu: {}", e.getMessage());
+        }
     }
 
     public StudentCommentDTO replyToComment(String studentId, String parentCommentId,
@@ -97,7 +122,20 @@ public class StudentCommentService {
 
         Comment saved = commentRepository.save(reply);
         User author = userRepository.findById(studentId).orElse(null);
+        sendReplyNotification(author, parent, studentId);
         return convertToDTO(saved, studentId, author);
+    }
+
+    private void sendReplyNotification(User replier, Comment parent, String replierId) {
+        try {
+            if (parent.getAuthorId() == null || parent.getAuthorId().equals(replierId)) return;
+            String replierName = replier != null && replier.getDisplayName() != null
+                    ? replier.getDisplayName() : "Cineva";
+            notificationService.createReplyNotification(
+                    parent.getAuthorId(), replierName, parent.getCourseId());
+        } catch (Exception e) {
+            log.warn("Nu s-a putut trimite notificarea de reply: {}", e.getMessage());
+        }
     }
 
     public void toggleLike(String studentId, String commentId) {

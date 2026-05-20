@@ -53,16 +53,17 @@ public class CognitoAdminService {
         }
     }
 
-    public void deleteUser(String email) {
+    public void deleteUser(String username) {
         try {
             cognitoClient.adminDeleteUser(AdminDeleteUserRequest.builder()
                     .userPoolId(cognitoProperties.getUserPoolId())
-                    .username(email)
+                    .username(username)
                     .build());
-            log.info("Utilizator Cognito șters: {}", email);
+            log.info("Utilizator Cognito șters: {}", username);
         } catch (UserNotFoundException e) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                "Utilizatorul '" + email + "' nu există în Cognito.");
+            log.warn("Utilizatorul '{}' nu există în Cognito — se continuă ștergerea din DB.", username);
+        } catch (Exception e) {
+            log.error("Eroare la ștergerea din Cognito a utilizatorului '{}': {}", username, e.getMessage());
         }
     }
 
@@ -84,5 +85,31 @@ public class CognitoAdminService {
                 .groupName(groupName)
                 .build())
                 .users();
+    }
+
+    public void addUserToGroup(String cognitoUsername, String groupName) {
+        try {
+            cognitoClient.adminAddUserToGroup(AdminAddUserToGroupRequest.builder()
+                    .userPoolId(cognitoProperties.getUserPoolId())
+                    .username(cognitoUsername)
+                    .groupName(groupName)
+                    .build());
+            log.info("Utilizator {} adăugat în grupul Cognito: {}", cognitoUsername, groupName);
+        } catch (Exception e) {
+            log.warn("Nu s-a putut adăuga {} în grupul {}: {}", cognitoUsername, groupName, e.getMessage());
+        }
+    }
+
+    public void removeUserFromGroup(String cognitoUsername, String groupName) {
+        try {
+            cognitoClient.adminRemoveUserFromGroup(AdminRemoveUserFromGroupRequest.builder()
+                    .userPoolId(cognitoProperties.getUserPoolId())
+                    .username(cognitoUsername)
+                    .groupName(groupName)
+                    .build());
+            log.info("Utilizator {} eliminat din grupul Cognito: {}", cognitoUsername, groupName);
+        } catch (Exception e) {
+            log.warn("Nu s-a putut elimina {} din grupul {}: {}", cognitoUsername, groupName, e.getMessage());
+        }
     }
 }
