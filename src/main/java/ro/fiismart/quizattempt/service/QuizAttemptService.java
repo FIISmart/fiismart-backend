@@ -6,6 +6,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import ro.fiismart.common.exception.ConflictException;
 import ro.fiismart.common.exception.ForbiddenException;
@@ -259,6 +260,35 @@ public class QuizAttemptService {
 
     public void deleteById(String attemptId) {
         quizAttemptRepository.deleteById(attemptId);
+    }
+
+    /**
+     * Sweeps IN_PROGRESS attempts past their deadline and flips them to EXPIRED.
+     *
+     * <p>A student who closes the tab past the deadline would otherwise stay
+     * {@code IN_PROGRESS} forever, which breaks {@code findFirstBy...AndStatus}
+     * idempotency on subsequent starts and corrupts course-progress maths.
+     * This job runs every 5 minutes (with a 1-minute startup delay) and uses
+     * a 30-second leniency window — strictly larger than {@link #GRACE_SECONDS}
+     * so an in-flight legitimate submit never races the sweep.</p>
+     */
+    @Scheduled(fixedDelay = 5 * 60 * 1000, initialDelay = 60 * 1000)
+    public void sweepExpiredAttempts() {
+        List<QuizAttempt> stuck = quizAttemptRepository.findByStatus("IN_PROGRESS");
+        Instant now = Instant.now();
+        int flipped = 0;
+        for (QuizAttempt a : stuck) {
+            if (a.getStartedAt() == null) continue;
+            ModuleQuiz quiz = moduleQuizRepository.findById(a.getQuizId()).orElse(null);
+            if (quiz == null) continue;
+            long durationSec = (long) quiz.getTimeLimit() * 60L;
+            if (Duration.between(a.getStartedAt(), now).toSeconds() > durationSec + 30) {
+                a.setStatus("EXPIRED");
+                quizAttemptRepository.save(a);
+                flipped++;
+            }
+        }
+        if (flipped > 0) log.info("Expired sweep: flipped {} attempts", flipped);
     }
 
     // ── Server-side grading helpers ──────────────────────────────────────────
