@@ -21,6 +21,9 @@ import java.util.Set;
 public class GeminiClient {
 
     private static final Set<String> BAD_FINISH_REASONS = Set.of("SAFETY", "RECITATION", "OTHER");
+    /** Statuses that are worth retrying — Google's lite models routinely return 503/429 under load. */
+    private static final Set<Integer> RETRYABLE_STATUSES = Set.of(429, 500, 502, 503, 504);
+    private static final int MAX_ATTEMPTS = 3;
 
     private final GeminiProperties properties;
     private final RestClient geminiRestClient;
@@ -48,22 +51,7 @@ public class GeminiClient {
         log.info("Gemini call model={} promptLen={} pdfBytes={}",
                 properties.getModel(), prompt.length(), pdfBytes.length);
 
-        String rawResponse;
-        try {
-            rawResponse = geminiRestClient.post()
-                    .uri("/v1beta/models/{model}:generateContent", properties.getModel())
-                    .header("x-goog-api-key", properties.getKey())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(String.class);
-        } catch (HttpStatusCodeException e) {
-            log.warn("Gemini call failed status={}", e.getStatusCode());
-            throw new GeminiException("Gemini upstream HTTP error: " + e.getStatusCode());
-        } catch (Exception e) {
-            log.warn("Gemini call failed: {}", e.getClass().getSimpleName());
-            throw new GeminiException("Gemini call failed");
-        }
+        String rawResponse = callWithRetry(body);
 
         if (rawResponse == null || rawResponse.isBlank()) {
             log.warn("Gemini returned empty response body");
@@ -102,6 +90,55 @@ public class GeminiClient {
         } catch (Exception e) {
             log.warn("Failed to parse Gemini response: {}", e.getClass().getSimpleName());
             throw new GeminiException("Failed to parse Gemini response", e);
+        }
+    }
+
+    /**
+     * Calls Gemini and retries on transient upstream errors (overload /
+     * rate limit / gateway). Lite models in particular routinely return
+     * 503 under load — without retry the user sees AI_UPSTREAM_ERROR
+     * on what would otherwise be a successful generation seconds later.
+     */
+    private String callWithRetry(Map<String, Object> body) {
+        HttpStatusCodeException lastRetryable = null;
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                return geminiRestClient.post()
+                        .uri("/v1beta/models/{model}:generateContent", properties.getModel())
+                        .header("x-goog-api-key", properties.getKey())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(body)
+                        .retrieve()
+                        .body(String.class);
+            } catch (HttpStatusCodeException e) {
+                int status = e.getStatusCode().value();
+                if (RETRYABLE_STATUSES.contains(status) && attempt < MAX_ATTEMPTS) {
+                    long backoffMs = 500L * (long) Math.pow(2, attempt - 1); // 500, 1000, 2000ms
+                    log.warn("Gemini call status={} attempt={}/{} — retrying in {}ms",
+                            e.getStatusCode(), attempt, MAX_ATTEMPTS, backoffMs);
+                    sleepQuietly(backoffMs);
+                    lastRetryable = e;
+                    continue;
+                }
+                log.warn("Gemini call failed status={}", e.getStatusCode());
+                throw new GeminiException("Gemini upstream HTTP error: " + e.getStatusCode());
+            } catch (Exception e) {
+                log.warn("Gemini call failed: {}", e.getClass().getSimpleName());
+                throw new GeminiException("Gemini call failed");
+            }
+        }
+        // Exhausted retries on a retryable status — surface the last one.
+        log.warn("Gemini exhausted retries, last status={}",
+                lastRetryable != null ? lastRetryable.getStatusCode() : "unknown");
+        throw new GeminiException("Gemini upstream busy after "
+                + MAX_ATTEMPTS + " attempts; try again in a moment.");
+    }
+
+    private static void sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 }
