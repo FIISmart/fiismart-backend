@@ -23,7 +23,7 @@ export GEMINI_API_KEY=...   # from Google AI Studio
 ## Endpoint
 
 ```
-POST /ai/pdf/generate                Authorization: Bearer <professor-token>
+POST /api/v1/ai/pdf/generate         Authorization: Bearer <professor-token>
 Content-Type: multipart/form-data
 
 file=<PDF, application/pdf, ≤ 15 MB>

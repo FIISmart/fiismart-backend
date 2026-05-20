@@ -17,7 +17,7 @@ import ro.fiismart.ai.service.PdfAiService;
 import java.io.IOException;
 
 @RestController
-@RequestMapping("/ai")
+@RequestMapping("/api/v1/ai")
 @RequiredArgsConstructor
 @Slf4j
 public class PdfAiController {
