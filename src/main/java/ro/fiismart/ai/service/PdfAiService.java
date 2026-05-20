@@ -12,6 +12,8 @@ import ro.fiismart.ai.dto.response.AiQuizQuestionDTO;
 import ro.fiismart.ai.dto.response.PdfAiGenerateResponse;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @Slf4j
@@ -29,6 +31,8 @@ public class PdfAiService {
 
     private final GeminiClient geminiClient;
     private final ObjectMapper objectMapper;
+
+    private static final byte[] PDF_MAGIC = {0x25, 0x50, 0x44, 0x46}; // "%PDF"
 
     public PdfAiGenerateResponse generate(MultipartFile pdf, int questionCount, String language)
             throws IOException {
@@ -72,6 +76,17 @@ public class PdfAiService {
         }
         if (pdf.getSize() > MAX_PDF_BYTES) {
             throw new IllegalArgumentException("PDF exceeds 15 MB limit");
+        }
+        // Magic-byte sniff: a real PDF starts with "%PDF". The client-supplied
+        // Content-Type can be forged, so verify the actual bytes.
+        try (InputStream in = pdf.getInputStream()) {
+            byte[] header = in.readNBytes(PDF_MAGIC.length);
+            if (header.length < PDF_MAGIC.length
+                    || !new String(header, StandardCharsets.US_ASCII).equals("%PDF")) {
+                throw new IllegalArgumentException("File is not a valid PDF");
+            }
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Cannot read uploaded PDF", e);
         }
     }
 
