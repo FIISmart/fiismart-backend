@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import ro.fiismart.common.model.LectureProgressEntry;
 import ro.fiismart.enrollment.dto.EnrollmentRequest;
@@ -23,6 +24,24 @@ public class EnrollmentController {
     @PostMapping
     public ResponseEntity<EnrollmentResponse> create(@Valid @RequestBody EnrollmentRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(enrollmentService.create(request));
+    }
+
+    @GetMapping("/me/{courseId}/status")
+    public ResponseEntity<Map<String, Boolean>> checkMyEnrollment(
+            @PathVariable String courseId,
+            @AuthenticationPrincipal String currentUserId) {
+        return ResponseEntity.ok(Map.of("enrolled", enrollmentService.isEnrolled(currentUserId, courseId)));
+    }
+
+    @PostMapping("/me/{courseId}")
+    public ResponseEntity<Map<String, String>> enrollMe(
+            @PathVariable String courseId,
+            @AuthenticationPrincipal String currentUserId) {
+        EnrollmentRequest req = new EnrollmentRequest();
+        req.setStudentId(currentUserId);
+        req.setCourseId(courseId);
+        EnrollmentResponse resp = enrollmentService.create(req);
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("id", resp.getId()));
     }
 
     @GetMapping("/{id}")
