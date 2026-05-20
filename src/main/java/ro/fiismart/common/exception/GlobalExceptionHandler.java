@@ -114,7 +114,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(GeminiException.class)
     public ResponseEntity<Map<String, String>> handleGemini(GeminiException ex) {
-        log.warn("Gemini upstream error: {}", ex.getMessage(), ex.getCause());
+        // Do NOT log the cause's stack trace — upstream exceptions can carry the
+        // request URI in their getMessage()/toString(), and Gemini's URI used to
+        // include the API key as a query param. Header-based auth + cause-free
+        // logging both defend against that leak path.
+        log.warn("Gemini upstream error: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(Map.of("message", "AI service unavailable", "code", "AI_UPSTREAM_ERROR"));
     }

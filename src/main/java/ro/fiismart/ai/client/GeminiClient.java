@@ -51,18 +51,18 @@ public class GeminiClient {
         String rawResponse;
         try {
             rawResponse = geminiRestClient.post()
-                    .uri("/v1beta/models/{model}:generateContent?key={key}",
-                            properties.getModel(), properties.getKey())
+                    .uri("/v1beta/models/{model}:generateContent", properties.getModel())
+                    .header("x-goog-api-key", properties.getKey())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
                     .body(String.class);
         } catch (HttpStatusCodeException e) {
             log.warn("Gemini call failed status={}", e.getStatusCode());
-            throw new GeminiException("Gemini upstream HTTP error: " + e.getStatusCode(), e);
+            throw new GeminiException("Gemini upstream HTTP error: " + e.getStatusCode());
         } catch (Exception e) {
             log.warn("Gemini call failed: {}", e.getClass().getSimpleName());
-            throw new GeminiException("Gemini call failed", e);
+            throw new GeminiException("Gemini call failed");
         }
 
         if (rawResponse == null || rawResponse.isBlank()) {
