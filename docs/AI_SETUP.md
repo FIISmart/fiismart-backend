@@ -40,8 +40,8 @@ Errors:
 
 ## Limits
 
-- 15 MB PDF size cap (enforced in `PdfAiService`).
-- 20 MB multipart envelope cap (configured via `AiConfig#multipartConfigElement`).
+- 15 MB PDF size cap. Enforced at the multipart parser (`AiConfig#multipartConfigElement`) so oversize files get `413 PDF_TOO_LARGE` consistently. `PdfAiService` re-checks as defense in depth.
+- 16 MB multipart request cap (leaves headroom for the form fields).
 - Question count: 3–10.
 
 ## What is NOT logged

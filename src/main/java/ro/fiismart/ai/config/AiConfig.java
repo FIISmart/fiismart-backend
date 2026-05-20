@@ -27,16 +27,18 @@ public class AiConfig {
     }
 
     /**
-     * 20 MB cap on multipart uploads — accommodates the 15 MB PDF limit
-     * enforced in PdfAiService plus multipart envelope overhead. Set
-     * programmatically so the limit ships with the code rather than
-     * depending on a (gitignored) application.properties entry.
+     * Multipart cap aligned with PdfAiService's 15 MB PDF limit so both
+     * paths (parser-level and service-level) converge on the same client
+     * error. File parts > 15 MB get rejected at the parser → 413
+     * PDF_TOO_LARGE; the service-level check then acts as defense in
+     * depth. The 16 MB request cap leaves headroom for the small form
+     * fields (questionCount, language).
      */
     @Bean
     public MultipartConfigElement multipartConfigElement() {
         MultipartConfigFactory factory = new MultipartConfigFactory();
-        factory.setMaxFileSize(DataSize.ofMegabytes(20));
-        factory.setMaxRequestSize(DataSize.ofMegabytes(20));
+        factory.setMaxFileSize(DataSize.ofMegabytes(15));
+        factory.setMaxRequestSize(DataSize.ofMegabytes(16));
         return factory.createMultipartConfig();
     }
 }
