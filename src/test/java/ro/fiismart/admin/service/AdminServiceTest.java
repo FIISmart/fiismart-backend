@@ -112,7 +112,7 @@ class AdminServiceTest {
         AdminUpdateUserRequest req = new AdminUpdateUserRequest();
         req.setDisplayName("  Gheorghe Ionescu  ");
 
-        AdminUserResponse result = adminService.updateUser("user1", req);
+        AdminUserResponse result = adminService.updateUser("user1", req, "admin99");
 
         assertThat(sampleUser.getDisplayName()).isEqualTo("Gheorghe Ionescu");
         verify(userRepository).save(sampleUser);
@@ -126,7 +126,7 @@ class AdminServiceTest {
         AdminUpdateUserRequest req = new AdminUpdateUserRequest();
         req.setIsAdmin(true);
 
-        adminService.updateUser("user1", req);
+        adminService.updateUser("user1", req, "admin99");
 
         assertThat(sampleUser.getRole()).isEqualTo("admin");
         assertThat(sampleUser.getBaseRole()).isEqualTo("student");
@@ -142,7 +142,7 @@ class AdminServiceTest {
         AdminUpdateUserRequest req = new AdminUpdateUserRequest();
         req.setIsAdmin(true);
 
-        adminService.updateUser("user1", req);
+        adminService.updateUser("user1", req, "admin99");
 
         verify(cognitoAdminService, never()).addUserToGroup(any(), any());
     }
@@ -157,7 +157,7 @@ class AdminServiceTest {
         AdminUpdateUserRequest req = new AdminUpdateUserRequest();
         req.setIsAdmin(false);
 
-        adminService.updateUser("user1", req);
+        adminService.updateUser("user1", req, "admin99");
 
         assertThat(sampleUser.getRole()).isEqualTo("teacher");
         assertThat(sampleUser.getBaseRole()).isNull();
@@ -174,7 +174,7 @@ class AdminServiceTest {
         AdminUpdateUserRequest req = new AdminUpdateUserRequest();
         req.setIsAdmin(false);
 
-        adminService.updateUser("user1", req);
+        adminService.updateUser("user1", req, "admin99");
 
         assertThat(sampleUser.getRole()).isEqualTo("student");
     }
@@ -187,7 +187,7 @@ class AdminServiceTest {
         AdminUpdateUserRequest req = new AdminUpdateUserRequest();
         req.setIsAdmin(false);
 
-        adminService.updateUser("user1", req);
+        adminService.updateUser("user1", req, "admin99");
 
         verify(cognitoAdminService, never()).removeUserFromGroup(any(), any());
     }
@@ -201,7 +201,7 @@ class AdminServiceTest {
         req.setBanned(true);
         req.setBanReason("Comportament neadecvat");
 
-        adminService.updateUser("user1", req);
+        adminService.updateUser("user1", req, "admin99");
 
         assertThat(sampleUser.isBanned()).isTrue();
         assertThat(sampleUser.getBanReason()).isEqualTo("Comportament neadecvat");
@@ -219,7 +219,7 @@ class AdminServiceTest {
         AdminUpdateUserRequest req = new AdminUpdateUserRequest();
         req.setBanned(false);
 
-        adminService.updateUser("user1", req);
+        adminService.updateUser("user1", req, "admin99");
 
         assertThat(sampleUser.isBanned()).isFalse();
         assertThat(sampleUser.getBanReason()).isNull();
@@ -230,7 +230,7 @@ class AdminServiceTest {
     void updateUser_notFound_throwsResponseStatusException() {
         when(userRepository.findById("notExist")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> adminService.updateUser("notExist", new AdminUpdateUserRequest()))
+        assertThatThrownBy(() -> adminService.updateUser("notExist", new AdminUpdateUserRequest(), "admin99"))
                 .isInstanceOf(ResponseStatusException.class);
     }
 
@@ -242,7 +242,7 @@ class AdminServiceTest {
         AdminUpdateUserRequest req = new AdminUpdateUserRequest();
         req.setDisplayName("   ");
 
-        adminService.updateUser("user1", req);
+        adminService.updateUser("user1", req, "admin99");
 
         assertThat(sampleUser.getDisplayName()).isEqualTo("Ion Popescu");
     }
@@ -256,9 +256,34 @@ class AdminServiceTest {
         AdminUpdateUserRequest req = new AdminUpdateUserRequest();
         req.setIsAdmin(true);
 
-        adminService.updateUser("user1", req);
+        adminService.updateUser("user1", req, "admin99");
 
         verify(cognitoAdminService).addUserToGroup("test@test.com", "ADMIN");
+    }
+
+    @Test
+    void updateUser_selfBan_throwsForbidden() {
+        when(userRepository.findById("user1")).thenReturn(Optional.of(sampleUser));
+
+        AdminUpdateUserRequest req = new AdminUpdateUserRequest();
+        req.setBanned(true);
+        req.setBanReason("Test");
+
+        assertThatThrownBy(() -> adminService.updateUser("user1", req, "user1"))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(e -> assertThat(((ResponseStatusException) e).getStatusCode().value()).isEqualTo(403));
+    }
+
+    @Test
+    void updateUser_selfRoleChange_throwsForbidden() {
+        when(userRepository.findById("user1")).thenReturn(Optional.of(sampleUser));
+
+        AdminUpdateUserRequest req = new AdminUpdateUserRequest();
+        req.setIsAdmin(false);
+
+        assertThatThrownBy(() -> adminService.updateUser("user1", req, "user1"))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(e -> assertThat(((ResponseStatusException) e).getStatusCode().value()).isEqualTo(403));
     }
 
     // ── deleteUser ───────────────────────────────────────────────────────────

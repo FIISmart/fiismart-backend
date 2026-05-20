@@ -2,6 +2,7 @@ package ro.fiismart.admin.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import ro.fiismart.admin.dto.*;
 import ro.fiismart.admin.service.AdminService;
@@ -30,8 +31,9 @@ public class AdminController {
     @PutMapping("/users/{userId}")
     public ResponseEntity<AdminUserResponse> updateUser(
             @PathVariable String userId,
-            @RequestBody AdminUpdateUserRequest req) {
-        return ResponseEntity.ok(adminService.updateUser(userId, req));
+            @RequestBody AdminUpdateUserRequest req,
+            @AuthenticationPrincipal String currentUserId) {
+        return ResponseEntity.ok(adminService.updateUser(userId, req, currentUserId));
     }
 
     @DeleteMapping("/users/{userId}")

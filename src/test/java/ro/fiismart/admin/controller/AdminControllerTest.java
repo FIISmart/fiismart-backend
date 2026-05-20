@@ -55,7 +55,7 @@ class AdminControllerTest {
         AdminUpdateUserRequest req = new AdminUpdateUserRequest();
         req.setDisplayName("Test User");
         AdminUserResponse resp = AdminUserResponse.builder().build();
-        when(adminService.updateUser(eq("u1"), any())).thenReturn(resp);
+        when(adminService.updateUser(eq("u1"), any(), any())).thenReturn(resp);
 
         mockMvc.perform(put("/api/v1/admin/users/u1")
                         .contentType(MediaType.APPLICATION_JSON)

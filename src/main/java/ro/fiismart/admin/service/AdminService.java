@@ -51,9 +51,20 @@ public class AdminService {
                 .toList();
     }
 
-    public AdminUserResponse updateUser(String userId, AdminUpdateUserRequest req) {
+    public AdminUserResponse updateUser(String userId, AdminUpdateUserRequest req, String currentAdminId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utilizatorul nu există"));
+
+        boolean isSelf = userId.equals(currentAdminId);
+
+        if (isSelf && req.getBanned() != null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Nu îți poți suspenda propriul cont de administrator.");
+        }
+        if (isSelf && req.getIsAdmin() != null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Nu îți poți modifica propriul rol de administrator.");
+        }
 
         if (req.getDisplayName() != null && !req.getDisplayName().isBlank()) {
             user.setDisplayName(req.getDisplayName().trim());
