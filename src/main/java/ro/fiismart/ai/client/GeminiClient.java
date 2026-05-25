@@ -67,6 +67,42 @@ public class GeminiClient {
         log.info("Gemini call model={} promptLen={} pdfBytes={}",
                 properties.getModel(), prompt.length(), pdfBytes.length);
 
+        return invokeGenerateContent(body);
+    }
+
+    /**
+     * Text-only JSON-mode call — same behaviour as {@link #generateJson(String, byte[], Map)}
+     * but without an inline PDF part. Used by services that grade or summarize
+     * plain text (e.g. free-text quiz grading).
+     *
+     * <p>This is a thin overload on top of the existing retry/parse pipeline:
+     * adding it here keeps the request/response handling in one place rather
+     * than duplicating it across services.</p>
+     */
+    public String generateJson(String prompt, Map<String, Object> responseSchema) {
+        Map<String, Object> body = Map.of(
+                "contents", List.of(Map.of(
+                        "parts", List.of(Map.of("text", prompt))
+                )),
+                "generationConfig", Map.of(
+                        "responseMimeType", "application/json",
+                        "responseSchema", responseSchema
+                )
+        );
+
+        log.info("Gemini call (text-only) model={} promptLen={}",
+                properties.getModel(), prompt.length());
+
+        return invokeGenerateContent(body);
+    }
+
+    /**
+     * Shared post-call pipeline used by both PDF-bearing and text-only
+     * {@code generateJson} variants: drives {@link #callWithRetry} and
+     * extracts the first candidate's text part (or throws a sanitized
+     * {@link GeminiException}).
+     */
+    private String invokeGenerateContent(Map<String, Object> body) {
         String rawResponse = callWithRetry(body);
 
         if (rawResponse == null || rawResponse.isBlank()) {
