@@ -1,6 +1,7 @@
 package ro.fiismart.enrollment.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -17,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class EnrollmentService {
@@ -33,7 +35,9 @@ public class EnrollmentService {
                 .overallProgress(0)
                 .lectureProgress(new ArrayList<>())
                 .build();
-        return toResponse(enrollmentRepository.save(enrollment));
+        Enrollment saved = enrollmentRepository.save(enrollment);
+        log.info("Enrollment created: studentId={} courseId={}", saved.getStudentId(), saved.getCourseId());
+        return toResponse(saved);
     }
 
     public EnrollmentResponse findById(String id) {
@@ -61,6 +65,7 @@ public class EnrollmentService {
     }
 
     public void updateStatus(String enrollmentId, String status) {
+        log.info("Enrollment status changed: enrollmentId={} status={}", enrollmentId, status);
         mongoTemplate.updateFirst(
                 Query.query(Criteria.where("id").is(enrollmentId)),
                 new Update().set("status", status),
@@ -75,6 +80,7 @@ public class EnrollmentService {
     }
 
     public void markCompleted(String enrollmentId) {
+        log.info("Enrollment completed: enrollmentId={}", enrollmentId);
         mongoTemplate.updateFirst(
                 Query.query(Criteria.where("id").is(enrollmentId)),
                 new Update()
@@ -92,10 +98,12 @@ public class EnrollmentService {
     }
 
     public void deleteById(String enrollmentId) {
+        log.info("Enrollment deleted: enrollmentId={}", enrollmentId);
         enrollmentRepository.deleteById(enrollmentId);
     }
 
     public void deleteByStudentAndCourse(String studentId, String courseId) {
+        log.info("Enrollment deleted: studentId={} courseId={}", studentId, courseId);
         enrollmentRepository.deleteByStudentIdAndCourseId(studentId, courseId);
     }
 

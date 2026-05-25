@@ -7,6 +7,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import ro.fiismart.common.exception.ForbiddenException;
+import ro.fiismart.common.util.AuthUtils;
 import ro.fiismart.quizattempt.dto.QuizAttemptRequest;
 import ro.fiismart.quizattempt.dto.QuizAttemptResponse;
 import ro.fiismart.quizattempt.dto.StartQuizAttemptRequest;
@@ -25,15 +27,13 @@ public class QuizAttemptController {
     private final QuizAttemptService quizAttemptService;
 
     @PostMapping
+    @Deprecated
+    @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<QuizAttemptResponse> create(@Valid @RequestBody QuizAttemptRequest request) {
+        request.setStudentId(AuthUtils.getCurrentUserId());
         return ResponseEntity.status(HttpStatus.CREATED).body(quizAttemptService.create(request));
     }
 
-    /**
-     * Begin a timed attempt. Idempotent: a second call while an attempt is
-     * already {@code IN_PROGRESS} returns the same attempt instead of spawning
-     * a duplicate. Student-gated — never trust the client to identify itself.
-     */
     @PostMapping("/start")
     @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<StartQuizAttemptResponse> start(
@@ -43,10 +43,6 @@ public class QuizAttemptController {
                 .body(quizAttemptService.startAttempt(studentId, req.quizId()));
     }
 
-    /**
-     * Finalize an attempt. The service grades the answers server-side; the
-     * request body deliberately has no score/passed fields.
-     */
     @PostMapping("/{attemptId}/submit")
     @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<QuizAttemptResponse> submit(
@@ -56,7 +52,6 @@ public class QuizAttemptController {
         return ResponseEntity.ok(quizAttemptService.submitAttempt(studentId, attemptId, req.answers()));
     }
 
-    /** Flag an in-progress attempt as abandoned. Idempotent for terminal states. */
     @PostMapping("/{attemptId}/abandon")
     @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<Void> abandon(
@@ -72,7 +67,11 @@ public class QuizAttemptController {
     }
 
     @GetMapping("/student/{studentId}")
+    @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<List<QuizAttemptResponse>> findByStudent(@PathVariable String studentId) {
+        if (!studentId.equals(AuthUtils.getCurrentUserId())) {
+            throw new ForbiddenException("You can only access your own quiz attempts");
+        }
         return ResponseEntity.ok(quizAttemptService.findByStudentId(studentId));
     }
 
@@ -82,16 +81,24 @@ public class QuizAttemptController {
     }
 
     @GetMapping("/student/{studentId}/quiz/{quizId}")
+    @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<List<QuizAttemptResponse>> findByStudentAndQuiz(
             @PathVariable String studentId,
             @PathVariable String quizId) {
+        if (!studentId.equals(AuthUtils.getCurrentUserId())) {
+            throw new ForbiddenException("You can only access your own quiz attempts");
+        }
         return ResponseEntity.ok(quizAttemptService.findByStudentAndQuiz(studentId, quizId));
     }
 
     @GetMapping("/student/{studentId}/quiz/{quizId}/latest")
+    @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<QuizAttemptResponse> findLatest(
             @PathVariable String studentId,
             @PathVariable String quizId) {
+        if (!studentId.equals(AuthUtils.getCurrentUserId())) {
+            throw new ForbiddenException("You can only access your own quiz attempts");
+        }
         return ResponseEntity.ok(quizAttemptService.findLatestAttempt(studentId, quizId));
     }
 
@@ -106,9 +113,13 @@ public class QuizAttemptController {
     }
 
     @GetMapping("/student/{studentId}/quiz/{quizId}/passed")
+    @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<Map<String, Boolean>> hasStudentPassed(
             @PathVariable String studentId,
             @PathVariable String quizId) {
+        if (!studentId.equals(AuthUtils.getCurrentUserId())) {
+            throw new ForbiddenException("You can only access your own quiz attempts");
+        }
         return ResponseEntity.ok(Map.of("passed", quizAttemptService.hasStudentPassedQuiz(studentId, quizId)));
     }
 
@@ -118,7 +129,12 @@ public class QuizAttemptController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<Void> deleteById(@PathVariable String id) {
+        QuizAttemptResponse attempt = quizAttemptService.findById(id);
+        if (!attempt.getStudentId().equals(AuthUtils.getCurrentUserId())) {
+            throw new ForbiddenException("You can only delete your own quiz attempts");
+        }
         quizAttemptService.deleteById(id);
         return ResponseEntity.noContent().build();
     }

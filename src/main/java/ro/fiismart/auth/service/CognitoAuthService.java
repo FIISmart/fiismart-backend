@@ -9,6 +9,7 @@ import ro.fiismart.auth.dto.request.*;
 import ro.fiismart.auth.dto.response.AuthResponse;
 import ro.fiismart.auth.dto.response.UserResponse;
 import ro.fiismart.common.config.CognitoProperties;
+import ro.fiismart.common.exception.ConflictException;
 import ro.fiismart.common.model.User;
 import ro.fiismart.common.repository.UserRepository;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
@@ -69,7 +70,7 @@ public class CognitoAuthService {
             byte[] rawHmac = mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(rawHmac);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to compute Cognito SECRET_HASH", e);
+            throw new RuntimeException("Failed to compute Cognito SECRET_HASH", e); // crypto error — keep as RuntimeException
         }
     }
 
@@ -155,7 +156,7 @@ public class CognitoAuthService {
                     log.error("Rollback Cognito EȘUAT pentru {} — cleanup manual necesar: {}",
                             email, rollbackEx.getMessage());
                 }
-                throw new RuntimeException("Eroare la salvarea contului. Încearcă din nou.", dbEx);
+                throw new ConflictException("Eroare la salvarea contului. Încearcă din nou.");
             }
         }
 
@@ -387,8 +388,14 @@ public class CognitoAuthService {
         String lastName  = spaceIdx >= 0 ? displayName.substring(spaceIdx + 1) : "";
 
         String rawRole = user.getRole() != null ? user.getRole().toLowerCase() : "student";
-        String normalizedRole = (rawRole.equals("professor") || rawRole.equals("teacher"))
-                ? "PROFESSOR" : "STUDENT";
+        String normalizedRole;
+        if (rawRole.equals("admin")) {
+            normalizedRole = "ADMIN";
+        } else if (rawRole.equals("professor") || rawRole.equals("teacher")) {
+            normalizedRole = "PROFESSOR";
+        } else {
+            normalizedRole = "STUDENT";
+        }
 
         return UserResponse.builder()
                 .id(user.getId())

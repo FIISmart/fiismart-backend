@@ -3,6 +3,7 @@ package ro.fiismart.notification.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import ro.fiismart.common.exception.ForbiddenException;
 import ro.fiismart.common.model.Notification;
 import ro.fiismart.common.repository.NotificationRepository;
 import ro.fiismart.notification.dto.NotificationResponse;
@@ -93,8 +94,11 @@ public class NotificationService {
         return notificationRepository.countByRecipientIdAndReadFalse(userId);
     }
 
-    public void markRead(String notificationId) {
+    public void markRead(String notificationId, String userId) {
         notificationRepository.findById(notificationId).ifPresent(n -> {
+            if (!n.getRecipientId().equals(userId)) {
+                throw new ForbiddenException("You can only mark your own notifications as read");
+            }
             n.setRead(true);
             notificationRepository.save(n);
         });

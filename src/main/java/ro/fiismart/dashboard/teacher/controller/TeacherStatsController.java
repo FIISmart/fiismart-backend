@@ -1,6 +1,7 @@
 package ro.fiismart.dashboard.teacher.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import ro.fiismart.dashboard.teacher.dto.TeacherStatsDTO;
@@ -9,6 +10,7 @@ import ro.fiismart.dashboard.teacher.service.TeacherStatsService;
 @RestController
 @RequestMapping("/api/v1/teacher-dashboard")
 @RequiredArgsConstructor
+@PreAuthorize("hasRole('PROFESSOR')")
 public class TeacherStatsController {
 
     private final TeacherStatsService teacherStatsService;

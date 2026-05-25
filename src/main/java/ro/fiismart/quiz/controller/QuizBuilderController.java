@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import ro.fiismart.quiz.dto.QuizQuestionRequest;
 import ro.fiismart.quiz.dto.QuizQuestionResponse;
@@ -24,6 +25,7 @@ public class QuizBuilderController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<QuizResponse> createQuiz(
             @PathVariable String courseId,
             @Valid @RequestBody QuizRequest req) {
@@ -32,12 +34,14 @@ public class QuizBuilderController {
     }
 
     @DeleteMapping
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<Void> deleteQuiz(@PathVariable String courseId) {
         quizService.deleteByCourseId(courseId);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/questions")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<QuizQuestionResponse> addQuestion(
             @PathVariable String courseId,
             @Valid @RequestBody QuizQuestionRequest req) {
@@ -46,6 +50,7 @@ public class QuizBuilderController {
     }
 
     @DeleteMapping("/questions/{questionId}")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<Void> removeQuestion(
             @PathVariable String courseId,
             @PathVariable String questionId) {

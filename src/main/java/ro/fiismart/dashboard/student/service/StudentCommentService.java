@@ -1,10 +1,12 @@
 package ro.fiismart.dashboard.student.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
+import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Comment;
 import ro.fiismart.common.model.User;
 import ro.fiismart.common.repository.CommentRepository;
@@ -16,6 +18,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class StudentCommentService {
 
@@ -74,6 +77,7 @@ public class StudentCommentService {
                 .build();
 
         Comment saved = commentRepository.save(comment);
+        log.info("Comment created: commentId={} authorId={} lectureId={}", saved.getId(), saved.getAuthorId(), saved.getLectureId());
         User author = userRepository.findById(studentId).orElse(null);
         return convertToDTO(saved, studentId, author);
     }
@@ -81,7 +85,7 @@ public class StudentCommentService {
     public StudentCommentDTO replyToComment(String studentId, String parentCommentId,
                                             CommentCreateRequest request) {
         Comment parent = commentRepository.findById(parentCommentId)
-                .orElseThrow(() -> new RuntimeException("Parent comment not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Comment", parentCommentId));
 
         Comment reply = Comment.builder()
                 .authorId(studentId)
@@ -96,6 +100,7 @@ public class StudentCommentService {
                 .build();
 
         Comment saved = commentRepository.save(reply);
+        log.info("Comment reply created: commentId={} parentCommentId={}", saved.getId(), parentCommentId);
         User author = userRepository.findById(studentId).orElse(null);
         return convertToDTO(saved, studentId, author);
     }
@@ -106,6 +111,7 @@ public class StudentCommentService {
 
         boolean hasLiked = comment.getLikedBy() != null && comment.getLikedBy().contains(studentId);
 
+        log.info("Comment like toggled: commentId={} studentId={}", commentId, studentId);
         if (hasLiked) {
             mongoTemplate.updateFirst(
                     Query.query(Criteria.where("_id").is(commentId)),

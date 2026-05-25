@@ -1,6 +1,7 @@
 package ro.fiismart.moderation.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -13,6 +14,7 @@ import ro.fiismart.moderation.dto.CommentModerationResponse;
 
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CommentModerationService {
@@ -29,6 +31,7 @@ public class CommentModerationService {
     public void updateCommentStatus(String commentId, String status) {
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Comment not found: " + commentId));
+        log.info("Comment status changed: commentId={} status={}", commentId, status);
 
         String field = switch (status) {
             case "approved" -> "approved";

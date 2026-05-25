@@ -1,6 +1,6 @@
 package ro.fiismart.review.service;
 
-import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -8,19 +8,28 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Review;
+import ro.fiismart.common.model.User;
 import ro.fiismart.common.repository.ReviewRepository;
+import ro.fiismart.common.repository.UserRepository;
 import ro.fiismart.review.dto.ReviewRequest;
 import ro.fiismart.review.dto.ReviewResponse;
 
 import java.util.Date;
 import java.util.List;
 
+@Slf4j
 @Service
-@RequiredArgsConstructor
 public class ReviewService {
 
     private final ReviewRepository reviewRepository;
     private final MongoTemplate mongoTemplate;
+    private final UserRepository userRepository;
+
+    public ReviewService(ReviewRepository reviewRepository, MongoTemplate mongoTemplate, UserRepository userRepository) {
+        this.reviewRepository = reviewRepository;
+        this.mongoTemplate = mongoTemplate;
+        this.userRepository = userRepository;
+    }
 
     public ReviewResponse create(ReviewRequest request) {
         Review review = Review.builder()
@@ -31,7 +40,9 @@ public class ReviewService {
                 .createdAt(new Date())
                 .deleted(false)
                 .build();
-        return toResponse(reviewRepository.save(review));
+        Review saved = reviewRepository.save(review);
+        log.info("Review created: reviewId={} studentId={} courseId={}", saved.getId(), saved.getStudentId(), saved.getCourseId());
+        return toResponse(saved);
     }
 
     public ReviewResponse findById(String reviewId) {
@@ -67,17 +78,23 @@ public class ReviewService {
         return Math.round((total / reviews.size()) * 10.0) / 10.0;
     }
 
-    public void updateReview(String reviewId, int newStars, String newBody) {
+    public void updateReview(String reviewId, Integer newStars, String newBody) {
+        log.info("Review updated: reviewId={}", reviewId);
+        Update update = new Update().set("body", newBody);
+        if (newStars != null) {
+            update.set("stars", newStars);
+        }
         mongoTemplate.updateFirst(
                 Query.query(Criteria.where("id").is(reviewId)),
-                new Update().set("stars", newStars).set("body", newBody),
+                update,
                 Review.class);
     }
 
     public void softDelete(String reviewId, String deletedByUserId) {
+        log.info("Review soft-deleted: reviewId={} deletedBy={}", reviewId, deletedByUserId);
         mongoTemplate.updateFirst(
                 Query.query(Criteria.where("id").is(reviewId)),
-                new Update().set("isDeleted", true).set("deletedBy", deletedByUserId),
+                new Update().set("deleted", true).set("deletedBy", deletedByUserId),
                 Review.class);
     }
 
@@ -94,6 +111,9 @@ public class ReviewService {
     }
 
     private ReviewResponse toResponse(Review r) {
+        String authorName = userRepository.findById(r.getStudentId())
+                .map(User::getDisplayName)
+                .orElse("Anonim");
         return ReviewResponse.builder()
                 .id(r.getId())
                 .studentId(r.getStudentId())
@@ -103,6 +123,7 @@ public class ReviewService {
                 .createdAt(r.getCreatedAt())
                 .deleted(r.isDeleted())
                 .deletedBy(r.getDeletedBy())
+                .authorName(authorName)
                 .build();
     }
 }

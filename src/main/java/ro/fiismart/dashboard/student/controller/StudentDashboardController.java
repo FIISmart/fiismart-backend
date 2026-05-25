@@ -1,17 +1,17 @@
 package ro.fiismart.dashboard.student.controller;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import ro.fiismart.common.exception.ForbiddenException;
+import ro.fiismart.common.util.AuthUtils;
 import ro.fiismart.dashboard.student.dto.*;
 import ro.fiismart.dashboard.student.service.*;
 
 import java.util.List;
 
-/**
- * Controller principal pentru dashboard-ul studentului:
- * statistici, continuare curs, quizuri, răspunsuri, inițiale, recomandări.
- */
 @RestController
 @RequestMapping("/api/v1/student-dashboard")
+@PreAuthorize("hasRole('STUDENT')")
 public class StudentDashboardController {
 
     private final StudentDashboardService dashboardService;
@@ -34,41 +34,65 @@ public class StudentDashboardController {
 
     @GetMapping("/{studentId}/stats")
     public StatsDTO getStats(@PathVariable String studentId) {
+        if (!studentId.equals(AuthUtils.getCurrentUserId())) {
+            throw new ForbiddenException("You can only access your own dashboard");
+        }
         return statsService.getStats(studentId);
     }
 
     @GetMapping("/{studentId}/courses")
     public List<CourseSummaryDTO> getCourses(@PathVariable String studentId) {
+        if (!studentId.equals(AuthUtils.getCurrentUserId())) {
+            throw new ForbiddenException("You can only access your own dashboard");
+        }
         return coursesService.getCourses(studentId);
     }
 
     @GetMapping("/{studentId}/initials")
     public InitialsDTO getInitials(@PathVariable String studentId) {
+        if (!studentId.equals(AuthUtils.getCurrentUserId())) {
+            throw new ForbiddenException("You can only access your own dashboard");
+        }
         return initialsService.getInitials(studentId);
     }
 
     @GetMapping("/{studentId}/recommendations")
     public RecommendationDTO getRecommendation(@PathVariable String studentId) {
+        if (!studentId.equals(AuthUtils.getCurrentUserId())) {
+            throw new ForbiddenException("You can only access your own dashboard");
+        }
         return recommendationService.getRecommendation(studentId);
     }
 
     @GetMapping("/{studentId}/quizzes")
     public List<QuizStudentDTO> getQuizzes(@PathVariable String studentId) {
+        if (!studentId.equals(AuthUtils.getCurrentUserId())) {
+            throw new ForbiddenException("You can only access your own dashboard");
+        }
         return dashboardService.getQuizzesForStudent(studentId);
     }
 
     @GetMapping("/{studentId}/continue")
     public ContinueLearningDTO getContinueLearning(@PathVariable String studentId) {
+        if (!studentId.equals(AuthUtils.getCurrentUserId())) {
+            throw new ForbiddenException("You can only access your own dashboard");
+        }
         return dashboardService.getLastAccessedCourse(studentId);
     }
 
     @GetMapping("/{studentId}/answers")
     public List<StudentAnswerDTO> getAnswers(@PathVariable String studentId) {
+        if (!studentId.equals(AuthUtils.getCurrentUserId())) {
+            throw new ForbiddenException("You can only access your own dashboard");
+        }
         return dashboardService.getAnswersForStudent(studentId);
     }
 
     @GetMapping("/{studentId}/name")
     public UserNameDTO getName(@PathVariable String studentId) {
+        if (!studentId.equals(AuthUtils.getCurrentUserId())) {
+            throw new ForbiddenException("You can only access your own dashboard");
+        }
         return dashboardService.getStudentName(studentId);
     }
 }

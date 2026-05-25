@@ -4,8 +4,10 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -61,6 +63,7 @@ public class ModuleQuizController {
     }
 
     @PostMapping("/modules/{moduleId}/lectures/{lectureId}/quiz")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<ModuleQuizResponse> createOrReplaceLectureQuiz(
             @PathVariable String courseId,
             @PathVariable String moduleId,
@@ -71,6 +74,7 @@ public class ModuleQuizController {
     }
 
     @DeleteMapping("/modules/{moduleId}/lectures/{lectureId}/quiz")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<Void> deleteLectureQuiz(
             @PathVariable String courseId,
             @PathVariable String moduleId,
@@ -80,6 +84,7 @@ public class ModuleQuizController {
     }
 
     @PostMapping("/modules/{moduleId}/lectures/{lectureId}/quiz/questions")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<ModuleQuizResponse> addQuestionToLectureQuiz(
             @PathVariable String courseId,
             @PathVariable String moduleId,
@@ -90,6 +95,7 @@ public class ModuleQuizController {
     }
 
     @DeleteMapping("/modules/{moduleId}/lectures/{lectureId}/quiz/questions/{questionId}")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<Void> removeQuestionFromLectureQuiz(
             @PathVariable String courseId,
             @PathVariable String moduleId,
@@ -100,6 +106,7 @@ public class ModuleQuizController {
     }
 
     @PutMapping("/modules/{moduleId}/lectures/{lectureId}/quiz/questions/reorder")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<ModuleQuizResponse> reorderLectureQuizQuestions(
             @PathVariable String courseId,
             @PathVariable String moduleId,
@@ -120,6 +127,7 @@ public class ModuleQuizController {
     }
 
     @PostMapping("/modules/{moduleId}/quiz")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<ModuleQuizResponse> createOrReplaceModuleQuiz(
             @PathVariable String courseId,
             @PathVariable String moduleId,
@@ -129,6 +137,7 @@ public class ModuleQuizController {
     }
 
     @DeleteMapping("/modules/{moduleId}/quiz")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<Void> deleteModuleQuiz(
             @PathVariable String courseId,
             @PathVariable String moduleId) {
@@ -137,6 +146,7 @@ public class ModuleQuizController {
     }
 
     @PostMapping("/modules/{moduleId}/quiz/questions")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<ModuleQuizResponse> addQuestionToModuleQuiz(
             @PathVariable String courseId,
             @PathVariable String moduleId,
@@ -146,6 +156,7 @@ public class ModuleQuizController {
     }
 
     @DeleteMapping("/modules/{moduleId}/quiz/questions/{questionId}")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<Void> removeQuestionFromModuleQuiz(
             @PathVariable String courseId,
             @PathVariable String moduleId,
@@ -155,6 +166,7 @@ public class ModuleQuizController {
     }
 
     @PutMapping("/modules/{moduleId}/quiz/questions/reorder")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<ModuleQuizResponse> reorderModuleQuizQuestions(
             @PathVariable String courseId,
             @PathVariable String moduleId,
@@ -173,6 +185,7 @@ public class ModuleQuizController {
     }
 
     @PostMapping("/final-quiz")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<ModuleQuizResponse> createOrReplaceCourseFinalQuiz(
             @PathVariable String courseId,
             @Valid @RequestBody CreateModuleQuizRequest req) {
@@ -181,6 +194,7 @@ public class ModuleQuizController {
     }
 
     @DeleteMapping("/final-quiz")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<Void> deleteCourseFinalQuiz(
             @PathVariable String courseId) {
         moduleQuizService.deleteCourseFinalQuiz(courseId);
@@ -188,6 +202,7 @@ public class ModuleQuizController {
     }
 
     @PostMapping("/final-quiz/questions")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<ModuleQuizResponse> addQuestionToCourseFinalQuiz(
             @PathVariable String courseId,
             @Valid @RequestBody ModuleQuizQuestionRequest req) {
@@ -196,6 +211,7 @@ public class ModuleQuizController {
     }
 
     @DeleteMapping("/final-quiz/questions/{questionId}")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<Void> removeQuestionFromCourseFinalQuiz(
             @PathVariable String courseId,
             @PathVariable String questionId) {
@@ -204,6 +220,7 @@ public class ModuleQuizController {
     }
 
     @PutMapping("/final-quiz/questions/reorder")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<ModuleQuizResponse> reorderCourseFinalQuizQuestions(
             @PathVariable String courseId,
             @RequestBody List<String> orderedQuestionIds) {

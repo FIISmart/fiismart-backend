@@ -5,6 +5,7 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
+import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.*;
 import ro.fiismart.common.repository.*;
 import ro.fiismart.dashboard.student.dto.*;
@@ -40,7 +41,7 @@ public class StudentLectureService {
 
     public List<StudentModuleDTO> getModules(String studentId, String courseId) {
         Course course = courseRepository.findById(courseId)
-                .orElseThrow(() -> new RuntimeException("Course not found: " + courseId));
+                .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
 
         List<CourseModule> modules = course.getModules() != null ? course.getModules() : new ArrayList<>();
         Enrollment enrollment = enrollmentRepository.findByStudentIdAndCourseId(studentId, courseId).orElse(null);
@@ -73,10 +74,10 @@ public class StudentLectureService {
 
     public StudentLectureDetailDTO getLectureDetail(String studentId, String courseId, String lectureId) {
         Course course = courseRepository.findById(courseId)
-                .orElseThrow(() -> new RuntimeException("Course not found: " + courseId));
+                .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
 
         Lecture lecture = findLectureInCourse(course, lectureId);
-        if (lecture == null) throw new RuntimeException("Lecture not found: " + lectureId);
+        if (lecture == null) throw new ResourceNotFoundException("Lecture", lectureId);
 
         Enrollment enrollment = enrollmentRepository.findByStudentIdAndCourseId(studentId, courseId).orElse(null);
         LectureProgressEntry progress = findLatestProgress(enrollment, lectureId);
@@ -109,14 +110,14 @@ public class StudentLectureService {
                                                                 String lectureId,
                                                                 StudentLectureProgressRequest request) {
         Course course = courseRepository.findById(courseId)
-                .orElseThrow(() -> new RuntimeException("Course not found: " + courseId));
+                .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
 
         Lecture lecture = findLectureInCourse(course, lectureId);
-        if (lecture == null) throw new RuntimeException("Lecture not found: " + lectureId);
+        if (lecture == null) throw new ResourceNotFoundException("Lecture", lectureId);
         updateLectureDurationIfNeeded(courseId, course, lecture, request.getDurationSecs());
 
         Enrollment enrollment = enrollmentRepository.findByStudentIdAndCourseId(studentId, courseId)
-                .orElseThrow(() -> new RuntimeException("Student not enrolled: " + courseId));
+                .orElseThrow(() -> new ResourceNotFoundException("Enrollment", studentId + "@" + courseId));
 
         int watchedPercent = request.getWatchedPercent();
         if (watchedPercent < 0) watchedPercent = 0;

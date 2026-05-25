@@ -1,15 +1,18 @@
 package ro.fiismart.courses.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
+import ro.fiismart.common.exception.ForbiddenException;
 import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.CourseModule;
 import ro.fiismart.common.model.Lecture;
 import ro.fiismart.common.repository.CourseRepository;
+import ro.fiismart.common.util.AuthUtils;
 import ro.fiismart.courses.dto.request.*;
 import ro.fiismart.courses.dto.response.CourseResponse;
 import ro.fiismart.courses.dto.response.LectureResponse;
@@ -18,6 +21,7 @@ import ro.fiismart.courses.dto.response.ModuleResponse;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class CourseManagementService {
 
@@ -47,7 +51,9 @@ public class CourseManagementService {
                 .updatedAt(new Date())
                 .build();
 
-        return CourseResponse.fromModel(courseRepository.save(course));
+        Course saved = courseRepository.save(course);
+        log.info("Course created: courseId={} teacherId={}", saved.getId(), saved.getTeacherId());
+        return CourseResponse.fromModel(saved);
     }
 
     public CourseResponse getCourseById(String id) {
@@ -75,8 +81,10 @@ public class CourseManagementService {
     }
 
     public CourseResponse updateCourse(String id, UpdateCourseRequest req) {
+        log.info("Course updated: courseId={}", id);
         Course course = courseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Course", id));
+        verifyCourseOwner(course);
 
         if (req.getTitle() != null) course.setTitle(req.getTitle());
         if (req.getDescription() != null) course.setDescription(req.getDescription());
@@ -91,6 +99,8 @@ public class CourseManagementService {
     public CourseResponse publishCourse(String id) {
         Course course = courseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Course", id));
+        verifyCourseOwner(course);
+        log.info("Course published: courseId={}", id);
         course.setStatus("published");
         course.setUpdatedAt(new Date());
         return CourseResponse.fromModel(courseRepository.save(course));
@@ -99,13 +109,18 @@ public class CourseManagementService {
     public CourseResponse draftCourse(String id) {
         Course course = courseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Course", id));
+        verifyCourseOwner(course);
+        log.info("Course set to draft: courseId={}", id);
         course.setStatus("draft");
         course.setUpdatedAt(new Date());
         return CourseResponse.fromModel(courseRepository.save(course));
     }
 
     public void deleteCourse(String id) {
-        if (!courseRepository.existsById(id)) throw new ResourceNotFoundException("Course", id);
+        Course course = courseRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Course", id));
+        verifyCourseOwner(course);
+        log.info("Course deleted: courseId={}", id);
         courseRepository.deleteById(id);
     }
 
@@ -288,6 +303,14 @@ public class CourseManagementService {
                 new Update().set("modules.$", module).set("updatedAt", new Date()),
                 Course.class
         );
+    }
+
+    private void verifyCourseOwner(Course course) {
+        String currentUserId = AuthUtils.getCurrentUserId();
+        String courseOwner = course.getTeacherId();
+        if (courseOwner == null || !courseOwner.equals(currentUserId)) {
+            throw new ForbiddenException("You are not the owner of this course");
+        }
     }
 
     private CourseModule findModule(Course course, String moduleId) {

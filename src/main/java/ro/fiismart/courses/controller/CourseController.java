@@ -3,6 +3,7 @@ package ro.fiismart.courses.controller;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import ro.fiismart.courses.dto.request.CreateCourseRequest;
 import ro.fiismart.courses.dto.request.UpdateCourseRequest;
@@ -22,6 +23,7 @@ public class CourseController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<CourseResponse> createCourse(@Valid @RequestBody CreateCourseRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED).body(courseService.createCourse(req));
     }
@@ -41,22 +43,26 @@ public class CourseController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<CourseResponse> updateCourse(@PathVariable String id,
                                                         @Valid @RequestBody UpdateCourseRequest req) {
         return ResponseEntity.ok(courseService.updateCourse(id, req));
     }
 
     @PatchMapping("/{id}/publish")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<CourseResponse> publish(@PathVariable String id) {
         return ResponseEntity.ok(courseService.publishCourse(id));
     }
 
     @PatchMapping("/{id}/draft")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<CourseResponse> draft(@PathVariable String id) {
         return ResponseEntity.ok(courseService.draftCourse(id));
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<Void> deleteCourse(@PathVariable String id) {
         courseService.deleteCourse(id);
         return ResponseEntity.noContent().build();

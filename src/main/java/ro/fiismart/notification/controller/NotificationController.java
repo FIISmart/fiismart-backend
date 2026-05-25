@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import ro.fiismart.common.exception.ForbiddenException;
+import ro.fiismart.common.util.AuthUtils;
 import ro.fiismart.notification.dto.NotificationResponse;
 import ro.fiismart.notification.service.NotificationService;
 
@@ -32,7 +34,7 @@ public class NotificationController {
     @PatchMapping("/{id}/read")
     public ResponseEntity<Void> markRead(@PathVariable String id,
                                           @AuthenticationPrincipal String userId) {
-        notificationService.markRead(id);
+        notificationService.markRead(id, AuthUtils.getCurrentUserId());
         return ResponseEntity.noContent().build();
     }
 

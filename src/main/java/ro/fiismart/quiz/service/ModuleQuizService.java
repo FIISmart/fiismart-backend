@@ -6,12 +6,14 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
+import ro.fiismart.common.exception.ForbiddenException;
 import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.ModuleQuiz;
 import ro.fiismart.common.model.ModuleQuizQuestion;
 import ro.fiismart.common.repository.CourseRepository;
 import ro.fiismart.common.repository.ModuleQuizRepository;
+import ro.fiismart.common.util.AuthUtils;
 import ro.fiismart.quiz.dto.modulequiz.CreateModuleQuizRequest;
 import ro.fiismart.quiz.dto.modulequiz.ModuleQuizQuestionRequest;
 import ro.fiismart.quiz.dto.modulequiz.ModuleQuizResponse;
@@ -53,10 +55,10 @@ public class ModuleQuizService {
 
     // ── LECTURE QUIZ ─────────────────────────────────────────────────────────
 
-    public ModuleQuizResponse createOrUpdateLectureQuiz(String courseId, String moduleId,
-                                                        String lectureId,
-                                                        CreateModuleQuizRequest req) {
-        ensureCourseExists(courseId);
+public ModuleQuizResponse createOrUpdateLectureQuiz(String courseId, String moduleId,
+                                                         String lectureId,
+                                                         CreateModuleQuizRequest req) {
+        verifyCourseOwner(courseId);
         moduleQuizRepository.deleteByLectureIdAndQuizScope(lectureId, SCOPE_LECTURE);
         ModuleQuiz saved = moduleQuizRepository.save(
                 buildQuiz(courseId, moduleId, lectureId, SCOPE_LECTURE, req));
@@ -69,6 +71,7 @@ public class ModuleQuizService {
     }
 
     public void deleteLectureQuiz(String courseId, String moduleId, String lectureId) {
+        verifyCourseOwner(courseId);
         if (!moduleQuizRepository.existsByLectureIdAndQuizScope(lectureId, SCOPE_LECTURE)) {
             throw new ResourceNotFoundException("Quiz not found for lecture: " + lectureId);
         }
@@ -79,6 +82,7 @@ public class ModuleQuizService {
     public ModuleQuizResponse addQuestionToLectureQuiz(String courseId, String moduleId,
                                                        String lectureId,
                                                        ModuleQuizQuestionRequest req) {
+        verifyCourseOwner(courseId);
         ModuleQuiz quiz = getLectureQuizOrThrow(lectureId);
         appendQuestion(quiz, req);
         bumpCourseUpdatedAt(courseId);
@@ -87,6 +91,7 @@ public class ModuleQuizService {
 
     public void removeQuestionFromLectureQuiz(String courseId, String moduleId,
                                               String lectureId, String questionId) {
+        verifyCourseOwner(courseId);
         ModuleQuiz quiz = getLectureQuizOrThrow(lectureId);
         removeQuestion(quiz, questionId);
         bumpCourseUpdatedAt(courseId);
@@ -95,6 +100,7 @@ public class ModuleQuizService {
     public ModuleQuizResponse reorderLectureQuizQuestions(String courseId, String moduleId,
                                                           String lectureId,
                                                           List<String> orderedQuestionIds) {
+        verifyCourseOwner(courseId);
         ModuleQuiz quiz = getLectureQuizOrThrow(lectureId);
         applyReorder(quiz, orderedQuestionIds);
         bumpCourseUpdatedAt(courseId);
@@ -105,7 +111,7 @@ public class ModuleQuizService {
 
     public ModuleQuizResponse createOrUpdateModuleQuiz(String courseId, String moduleId,
                                                        CreateModuleQuizRequest req) {
-        ensureCourseExists(courseId);
+        verifyCourseOwner(courseId);
         moduleQuizRepository.deleteByModuleIdAndQuizScope(moduleId, SCOPE_MODULE);
         ModuleQuiz saved = moduleQuizRepository.save(
                 buildQuiz(courseId, moduleId, null, SCOPE_MODULE, req));
@@ -118,6 +124,7 @@ public class ModuleQuizService {
     }
 
     public void deleteModuleQuiz(String courseId, String moduleId) {
+        verifyCourseOwner(courseId);
         if (!moduleQuizRepository.existsByModuleIdAndQuizScope(moduleId, SCOPE_MODULE)) {
             throw new ResourceNotFoundException("Quiz not found for module: " + moduleId);
         }
@@ -127,6 +134,7 @@ public class ModuleQuizService {
 
     public ModuleQuizResponse addQuestionToModuleQuiz(String courseId, String moduleId,
                                                       ModuleQuizQuestionRequest req) {
+        verifyCourseOwner(courseId);
         ModuleQuiz quiz = getModuleQuizOrThrow(moduleId);
         appendQuestion(quiz, req);
         bumpCourseUpdatedAt(courseId);
@@ -134,6 +142,7 @@ public class ModuleQuizService {
     }
 
     public void removeQuestionFromModuleQuiz(String courseId, String moduleId, String questionId) {
+        verifyCourseOwner(courseId);
         ModuleQuiz quiz = getModuleQuizOrThrow(moduleId);
         removeQuestion(quiz, questionId);
         bumpCourseUpdatedAt(courseId);
@@ -141,6 +150,7 @@ public class ModuleQuizService {
 
     public ModuleQuizResponse reorderModuleQuizQuestions(String courseId, String moduleId,
                                                          List<String> orderedQuestionIds) {
+        verifyCourseOwner(courseId);
         ModuleQuiz quiz = getModuleQuizOrThrow(moduleId);
         applyReorder(quiz, orderedQuestionIds);
         bumpCourseUpdatedAt(courseId);
@@ -149,9 +159,9 @@ public class ModuleQuizService {
 
     // ── COURSE-FINAL QUIZ ────────────────────────────────────────────────────
 
-    public ModuleQuizResponse createOrUpdateCourseFinalQuiz(String courseId,
-                                                            CreateModuleQuizRequest req) {
-        ensureCourseExists(courseId);
+public ModuleQuizResponse createOrUpdateCourseFinalQuiz(String courseId,
+                                                              CreateModuleQuizRequest req) {
+        verifyCourseOwner(courseId);
         moduleQuizRepository.deleteByCourseIdAndQuizScope(courseId, SCOPE_COURSE_FINAL);
         ModuleQuiz saved = moduleQuizRepository.save(
                 buildQuiz(courseId, null, null, SCOPE_COURSE_FINAL, req));
@@ -164,6 +174,7 @@ public class ModuleQuizService {
     }
 
     public void deleteCourseFinalQuiz(String courseId) {
+        verifyCourseOwner(courseId);
         if (!moduleQuizRepository.existsByCourseIdAndQuizScope(courseId, SCOPE_COURSE_FINAL)) {
             throw new ResourceNotFoundException("Final quiz not found for course: " + courseId);
         }
@@ -171,8 +182,9 @@ public class ModuleQuizService {
         bumpCourseUpdatedAt(courseId);
     }
 
-    public ModuleQuizResponse addQuestionToCourseFinalQuiz(String courseId,
-                                                           ModuleQuizQuestionRequest req) {
+public ModuleQuizResponse addQuestionToCourseFinalQuiz(String courseId,
+                                                             ModuleQuizQuestionRequest req) {
+        verifyCourseOwner(courseId);
         ModuleQuiz quiz = getCourseFinalQuizOrThrow(courseId);
         appendQuestion(quiz, req);
         bumpCourseUpdatedAt(courseId);
@@ -180,13 +192,15 @@ public class ModuleQuizService {
     }
 
     public void removeQuestionFromCourseFinalQuiz(String courseId, String questionId) {
+        verifyCourseOwner(courseId);
         ModuleQuiz quiz = getCourseFinalQuizOrThrow(courseId);
         removeQuestion(quiz, questionId);
         bumpCourseUpdatedAt(courseId);
     }
 
-    public ModuleQuizResponse reorderCourseFinalQuizQuestions(String courseId,
-                                                              List<String> orderedQuestionIds) {
+public ModuleQuizResponse reorderCourseFinalQuizQuestions(String courseId,
+                                                                List<String> orderedQuestionIds) {
+        verifyCourseOwner(courseId);
         ModuleQuiz quiz = getCourseFinalQuizOrThrow(courseId);
         applyReorder(quiz, orderedQuestionIds);
         bumpCourseUpdatedAt(courseId);
@@ -194,6 +208,15 @@ public class ModuleQuizService {
     }
 
     // ── INTERNALS ────────────────────────────────────────────────────────────
+
+    private void verifyCourseOwner(String courseId) {
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Course not found: " + courseId));
+        String currentUserId = AuthUtils.getCurrentUserId();
+        if (course.getTeacherId() == null || !course.getTeacherId().equals(currentUserId)) {
+            throw new ForbiddenException("You are not the owner of this course");
+        }
+    }
 
     private ModuleQuiz buildQuiz(String courseId, String moduleId, String lectureId,
                                  String quizScope, CreateModuleQuizRequest req) {

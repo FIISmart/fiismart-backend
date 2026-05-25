@@ -1,6 +1,7 @@
 package ro.fiismart.dashboard.student.service;
 
 import org.springframework.stereotype.Service;
+import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.User;
 import ro.fiismart.common.repository.UserRepository;
 import ro.fiismart.dashboard.student.dto.InitialsDTO;
@@ -15,8 +16,8 @@ public class StudentInitialsService {
     }
 
     public InitialsDTO getInitials(String studentId) {
-        User user = userRepository.findById(studentId).orElse(null);
-        if (user == null) return null;
+        User user = userRepository.findById(studentId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", studentId));
 
         InitialsDTO dto = new InitialsDTO();
         dto.setInitials(computeInitials(user.getDisplayName()));

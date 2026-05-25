@@ -1,6 +1,7 @@
 package ro.fiismart.dashboard.student.service;
 
 import org.springframework.stereotype.Service;
+import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.Enrollment;
 import ro.fiismart.common.model.User;
@@ -29,7 +30,7 @@ public class StudentCourseService {
 
     public StudentCourseHeaderDTO getHeader(String studentId, String courseId) {
         Course course = courseRepository.findById(courseId)
-                .orElseThrow(() -> new RuntimeException("Course not found: " + courseId));
+                .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
 
         User teacher = course.getTeacherId() != null
                 ? userRepository.findById(course.getTeacherId()).orElse(null)

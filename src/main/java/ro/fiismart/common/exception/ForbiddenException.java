@@ -11,11 +11,19 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 @ResponseStatus(HttpStatus.FORBIDDEN)
 public class ForbiddenException extends RuntimeException {
 
+    private final String code;
+
     public ForbiddenException(String message) {
         super(message);
+        this.code = "FORBIDDEN";
     }
 
     public ForbiddenException(String message, Throwable cause) {
         super(message, cause);
+        this.code = "FORBIDDEN";
+    }
+
+    public String getCode() {
+        return code;
     }
 }

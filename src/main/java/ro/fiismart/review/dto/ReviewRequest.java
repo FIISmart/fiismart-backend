@@ -8,7 +8,6 @@ import lombok.Data;
 @Data
 public class ReviewRequest {
 
-    @NotBlank
     private String studentId;
 
     @NotBlank

@@ -78,6 +78,22 @@ public class CognitoAdminService {
         }
     }
 
+    public void addUserToGroup(String username, String groupName) {
+        cognitoClient.adminAddUserToGroup(AdminAddUserToGroupRequest.builder()
+                .userPoolId(cognitoProperties.getUserPoolId())
+                .username(username)
+                .groupName(groupName)
+                .build());
+    }
+
+    public void removeUserFromGroup(String username, String groupName) {
+        cognitoClient.adminRemoveUserFromGroup(AdminRemoveUserFromGroupRequest.builder()
+                .userPoolId(cognitoProperties.getUserPoolId())
+                .username(username)
+                .groupName(groupName)
+                .build());
+    }
+
     public List<UserType> listUsersInGroup(String groupName) {
         return cognitoClient.listUsersInGroup(ListUsersInGroupRequest.builder()
                 .userPoolId(cognitoProperties.getUserPoolId())

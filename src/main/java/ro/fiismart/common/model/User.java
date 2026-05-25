@@ -33,6 +33,7 @@ public class User {
     private String cognitoUsername;
 
     private String role;
+    private String baseRole;
     /** True pentru utilizatorii federați (Google) nou creați care nu și-au ales rolul încă. */
     private boolean needsRoleSelection;
     private String passwordHash;
@@ -45,8 +46,6 @@ public class User {
     private List<String> ownedCourses = new ArrayList<>();
     @Builder.Default
     private List<String> enrolledCourseIds = new ArrayList<>();
-    @Builder.Default
-    private List<Session> sessions = new ArrayList<>();
 
     private Date createdAt;
     private Date lastLoginAt;

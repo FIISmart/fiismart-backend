@@ -36,8 +36,8 @@ public class StudentQuizService {
     public StudentQuizStatusDTO getQuizStatus(String studentId, String courseId) {
         StudentQuizStatusDTO dto = new StudentQuizStatusDTO();
 
-        Course course = courseRepository.findById(courseId).orElse(null);
-        if (course == null) return dto;
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
 
         ModuleQuiz finalQuiz = moduleQuizRepository.findByCourseIdAndQuizScope(courseId, "course_final").orElse(null);
         if (finalQuiz != null) {
@@ -46,8 +46,8 @@ public class StudentQuizService {
         }
 
         if (course.getQuizId() == null) return dto;
-        Quiz quiz = quizRepository.findById(course.getQuizId()).orElse(null);
-        if (quiz == null) return dto;
+        Quiz quiz = quizRepository.findById(course.getQuizId())
+                .orElseThrow(() -> new ResourceNotFoundException("Quiz", course.getQuizId()));
 
         return buildStatus(quiz.getId(), quiz.getTitle(), "course_final", null, null, studentId);
     }

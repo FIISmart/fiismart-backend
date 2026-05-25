@@ -6,7 +6,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.util.Date;
 
@@ -26,7 +25,6 @@ public class Review {
     private String body;
     private Date createdAt;
 
-    @Field("isDeleted")
     private boolean deleted;
 
     private String deletedBy;

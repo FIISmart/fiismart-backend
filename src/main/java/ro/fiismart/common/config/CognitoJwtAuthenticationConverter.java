@@ -47,8 +47,14 @@ public class CognitoJwtAuthenticationConverter
             );
 
             String dbRole = user.getRole() != null ? user.getRole().toLowerCase() : "student";
-            String grantedRole = (dbRole.equals("professor") || dbRole.equals("teacher"))
-                    ? "ROLE_PROFESSOR" : "ROLE_STUDENT";
+            String grantedRole;
+            if (dbRole.equals("admin")) {
+                grantedRole = "ROLE_ADMIN";
+            } else if (dbRole.equals("professor") || dbRole.equals("teacher")) {
+                grantedRole = "ROLE_PROFESSOR";
+            } else {
+                grantedRole = "ROLE_STUDENT";
+            }
 
             log.debug("[JWT] sub={} email={} federat={} rol={} mongoId={}",
                     sub, email, isFederated, grantedRole, user.getId());
@@ -59,7 +65,8 @@ public class CognitoJwtAuthenticationConverter
             );
         } catch (Exception e) {
             log.error("[JWT] convert() a aruncat excepție — authentication refuzat: {}", e.getMessage(), e);
-            return null;
+            throw new org.springframework.security.authentication.InsufficientAuthenticationException(
+                    "JWT authentication failed: " + e.getMessage(), e);
         }
     }
 }

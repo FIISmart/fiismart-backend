@@ -8,8 +8,8 @@ import ro.fiismart.common.repository.EnrollmentRepository;
 import ro.fiismart.dashboard.student.dto.RecommendationDTO;
 
 import java.util.List;
-import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 @Service
@@ -36,7 +36,7 @@ public class StudentRecommendationService {
 
         if (notEnrolled.isEmpty()) return null;
 
-        Course recommended = notEnrolled.get(new Random().nextInt(notEnrolled.size()));
+        Course recommended = notEnrolled.get(ThreadLocalRandom.current().nextInt(notEnrolled.size()));
 
         RecommendationDTO dto = new RecommendationDTO();
         dto.setCourseId(recommended.getId());

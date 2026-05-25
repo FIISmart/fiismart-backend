@@ -17,4 +17,5 @@ public class ReviewResponse {
     private Date createdAt;
     private boolean deleted;
     private String deletedBy;
+    private String authorName;
 }
