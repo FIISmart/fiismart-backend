@@ -34,7 +34,7 @@ public class StudentStatsService {
         dto.setEnrolledCourses(allEnrollments.size());
         dto.setActiveCourses(allEnrollments.size() - completed.size());
         dto.setQuizzesCompleted(attempts.size());
-        dto.setStreakDays((int) calculateStreak(studentId).get("currentStreak"));
+        dto.setStreakDays(((Number) calculateStreak(studentId).get("currentStreak")).intValue());
         return dto;
     }
 
