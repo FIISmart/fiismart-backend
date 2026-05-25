@@ -2,6 +2,11 @@ package ro.fiismart.chat.service;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import ro.fiismart.chat.dto.response.ChatSessionDTO;
 import ro.fiismart.chat.dto.response.ChatSessionSummaryDTO;
@@ -33,16 +38,19 @@ public class ChatService {
     /** Default for newly-created threads; replaced by the first user message. */
     public static final String DEFAULT_TITLE = "Conversatie noua";
 
-    /** Hard cap on stored messages per thread — see {@link #trim(ChatSession)}. */
+    /** Hard cap on stored messages per thread — enforced atomically by
+     *  {@link #appendMessage(ChatSession, ChatMessage)} via Mongo {@code $slice}. */
     public static final int MAX_MESSAGES = 30;
 
     /** Default page size when the sidebar lists threads. */
     public static final int DEFAULT_PAGE_SIZE = 20;
 
     private final ChatSessionRepository repository;
+    private final MongoTemplate mongoTemplate;
 
-    public ChatService(ChatSessionRepository repository) {
+    public ChatService(ChatSessionRepository repository, MongoTemplate mongoTemplate) {
         this.repository = repository;
+        this.mongoTemplate = mongoTemplate;
     }
 
     public ChatSessionDTO createSession(String userId) {
@@ -99,24 +107,53 @@ public class ChatService {
     }
 
     /**
-     * Appends {@code message} to {@code session} (in-place), applies the
-     * 30-message trim, bumps {@code updatedAt}, and persists. Returns the
-     * saved entity so the streaming path can also expose the new message id.
+     * Appends {@code message} to {@code session} atomically (Mongo
+     * {@code $push} with a {@code $slice: -MAX_MESSAGES} trim), bumps
+     * {@code updatedAt}, and returns the post-update entity.
+     *
+     * <p>Why atomic instead of load-mutate-save: two near-simultaneous turns
+     * (user types fast + assistant streams) would otherwise race on the
+     * same document — last-write-wins drops the other side's message.
+     * The {@code $push} variant is a single round-trip and never has the
+     * race; the {@code @Version} field on {@link ChatSession} catches any
+     * future load-mutate-save call site that re-introduces the bug.</p>
+     *
+     * <p>The previous pair-aware trim is replaced by Mongo's
+     * {@code $slice}, which simply keeps the last
+     * {@link #MAX_MESSAGES} entries. We lose the "drop oldest user/assistant
+     * pair as a unit" guarantee — in exchange the operation becomes
+     * race-free and a single round-trip. Tool messages can in principle be
+     * orphaned at the window edge; in practice they sit adjacent to the
+     * assistant turn that produced them and roll off together.</p>
      *
      * <p>NB: This method must be invoked with an entity loaded via
      * {@link #loadOwned} — it does not re-check ownership itself.
      */
     public ChatSession appendMessage(ChatSession session, ChatMessage message) {
-        if (session.getMessages() == null) {
-            session.setMessages(new ArrayList<>());
-        }
         if (message.getTs() == null) {
             message.setTs(Instant.now());
         }
-        session.getMessages().add(message);
-        trim(session);
-        session.setUpdatedAt(Instant.now());
-        return repository.save(session);
+
+        Instant now = Instant.now();
+        Update update = new Update()
+                .push("messages").slice(-MAX_MESSAGES).each(message)
+                .set("updatedAt", now);
+
+        // findAndModify with returnNew=true gives us the post-update document
+        // in one round-trip — no need for a follow-up findById.
+        ChatSession updated = mongoTemplate.findAndModify(
+                Query.query(Criteria.where("_id").is(session.getId())
+                        .and("userId").is(session.getUserId())),
+                update,
+                FindAndModifyOptions.options().returnNew(true),
+                ChatSession.class);
+
+        if (updated == null) {
+            // Session vanished between loadOwned and here — surface the same
+            // not-found error callers already expect.
+            throw new ResourceNotFoundException("ChatSession", session.getId());
+        }
+        return updated;
     }
 
     public ChatSession save(ChatSession session) {
@@ -125,47 +162,16 @@ public class ChatService {
     }
 
     /**
-     * If a session has more than {@link #MAX_MESSAGES} entries, drop the
-     * oldest user/assistant <em>pair</em> from the front. Tool messages are
-     * kept adjacent to the assistant turn that produced them — we never
-     * orphan a {@code tool} message by dropping its preceding assistant.
-     *
-     * <p>Strategy: find the first {@code user} message; advance until we
-     * also pass the first following {@code assistant}; drop everything up
-     * to and including that assistant (which sweeps any interleaved
-     * {@code tool} entries). Repeat until back under the cap.
+     * Atomically set the title on a session. Used by the auto-title path
+     * after the first assistant turn — issuing a full document save there
+     * would race against any concurrent {@link #appendMessage} (and now
+     * trip the {@code @Version} check). A focused {@code $set} is safer.
      */
-    static void trim(ChatSession session) {
-        List<ChatMessage> messages = session.getMessages();
-        if (messages == null) {
-            return;
-        }
-        while (messages.size() > MAX_MESSAGES) {
-            int firstUserIdx = indexOfRole(messages, "user", 0);
-            if (firstUserIdx < 0) {
-                // No user message in the window — pathological, just drop
-                // the oldest single entry to make progress.
-                messages.remove(0);
-                continue;
-            }
-            int firstAssistantAfter = indexOfRole(messages, "assistant", firstUserIdx + 1);
-            int dropUpTo = (firstAssistantAfter < 0) ? firstUserIdx : firstAssistantAfter;
-            // Remove [0 .. dropUpTo] inclusive. Removing from the front
-            // repeatedly is O(n*n) — acceptable here because n is capped
-            // at 30 and trim runs only on overflow.
-            for (int i = 0; i <= dropUpTo; i++) {
-                messages.remove(0);
-            }
-        }
-    }
-
-    private static int indexOfRole(List<ChatMessage> messages, String role, int from) {
-        for (int i = from; i < messages.size(); i++) {
-            if (role.equals(messages.get(i).getRole())) {
-                return i;
-            }
-        }
-        return -1;
+    public void updateTitle(String sessionId, String userId, String newTitle) {
+        mongoTemplate.updateFirst(
+                Query.query(Criteria.where("_id").is(sessionId).and("userId").is(userId)),
+                new Update().set("title", newTitle).set("updatedAt", Instant.now()),
+                ChatSession.class);
     }
 
     /**

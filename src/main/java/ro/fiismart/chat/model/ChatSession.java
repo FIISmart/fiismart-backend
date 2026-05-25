@@ -1,6 +1,7 @@
 package ro.fiismart.chat.model;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -26,6 +27,17 @@ public class ChatSession {
     @Id
     private String id;
 
+    /**
+     * Mongo optimistic-locking version. Spring Data increments this on every
+     * {@code save} and throws {@link org.springframework.dao.OptimisticLockingFailureException}
+     * if the in-memory copy is stale. We use {@code MongoTemplate.updateFirst}
+     * with {@code $push} for the hot append-message path, which is naturally
+     * atomic, but the field is also useful for any future load-mutate-save
+     * call sites (and matches Spring Data's tracking expectations).
+     */
+    @Version
+    private Long version;
+
     /** Cognito {@code sub} of the owning user — never set client-side. */
     @Indexed
     private String userId;
@@ -47,6 +59,14 @@ public class ChatSession {
 
     public void setId(String id) {
         this.id = id;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
     }
 
     public String getUserId() {

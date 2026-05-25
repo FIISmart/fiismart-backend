@@ -237,15 +237,18 @@ public class GeminiChatService {
             // Auto-title from first user message if still default. We look
             // for the FIRST user message in the session — that's what the
             // user originally typed to start the thread.
-            String newTitle = null;
+            //
+            // Use the focused updateTitle helper rather than a full save:
+            // a save() here would race the next user-turn's appendMessage
+            // and either lose a message or trip the @Version check.
             if (ChatService.DEFAULT_TITLE.equals(savedSession.getTitle())) {
                 String firstUser = findFirstUserContent(savedSession);
                 if (firstUser != null && !firstUser.isBlank()) {
-                    newTitle = firstUser.length() > TITLE_FROM_USER_MAX_LEN
+                    String newTitle = firstUser.length() > TITLE_FROM_USER_MAX_LEN
                             ? firstUser.substring(0, TITLE_FROM_USER_MAX_LEN) + "..."
                             : firstUser;
                     savedSession.setTitle(newTitle);
-                    chatService.save(savedSession);
+                    chatService.updateTitle(savedSession.getId(), userId, newTitle);
                 }
             }
 
