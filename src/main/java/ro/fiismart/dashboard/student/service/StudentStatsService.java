@@ -9,6 +9,7 @@ import ro.fiismart.dashboard.student.dto.StatsDTO;
 
 import java.util.Calendar;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -33,34 +34,36 @@ public class StudentStatsService {
         dto.setEnrolledCourses(allEnrollments.size());
         dto.setActiveCourses(allEnrollments.size() - completed.size());
         dto.setQuizzesCompleted(attempts.size());
-        dto.setStreakDays(calculateStreak(allEnrollments));
+        dto.setStreakDays((int) calculateStreak(studentId).get("currentStreak"));
         return dto;
     }
 
-    private int calculateStreak(List<Enrollment> enrollments) {
+    public Map<String, Object> calculateStreak(String studentId) {
+        List<Enrollment> enrollments = enrollmentRepository.findByStudentId(studentId);
+
         Set<String> accessDays = enrollments.stream()
                 .filter(e -> e.getLastAccessedAt() != null)
                 .map(e -> {
                     Calendar cal = Calendar.getInstance();
                     cal.setTime(e.getLastAccessedAt());
-                    return cal.get(Calendar.YEAR) + "-" + cal.get(Calendar.MONTH) + "-" + cal.get(Calendar.DAY_OF_MONTH);
+                    return dayKey(cal);
                 })
                 .collect(Collectors.toSet());
 
-        if (accessDays.isEmpty()) return 0;
-
         int streak = 0;
-        Calendar today = Calendar.getInstance();
+        Calendar cursor = Calendar.getInstance();
 
-        while (true) {
-            String day = today.get(Calendar.YEAR) + "-" + today.get(Calendar.MONTH) + "-" + today.get(Calendar.DAY_OF_MONTH);
-            if (accessDays.contains(day)) {
-                streak++;
-                today.add(Calendar.DAY_OF_MONTH, -1);
-            } else {
-                break;
-            }
+        while (accessDays.contains(dayKey(cursor))) {
+            streak++;
+            cursor.add(Calendar.DAY_OF_MONTH, -1);
         }
-        return streak;
+
+        boolean hasCompletedToday = accessDays.contains(dayKey(Calendar.getInstance()));
+
+        return Map.of("currentStreak", streak, "hasCompletedToday", hasCompletedToday);
+    }
+
+    private String dayKey(Calendar cal) {
+        return cal.get(Calendar.YEAR) + "-" + cal.get(Calendar.MONTH) + "-" + cal.get(Calendar.DAY_OF_MONTH);
     }
 }
