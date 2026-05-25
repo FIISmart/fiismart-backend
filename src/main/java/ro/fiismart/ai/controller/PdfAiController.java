@@ -1,6 +1,7 @@
 package ro.fiismart.ai.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -20,13 +21,16 @@ import ro.fiismart.ai.service.PdfAiPrompts;
 import ro.fiismart.ai.service.PdfAiService;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 @RestController
 @RequestMapping("/api/v1/ai")
@@ -46,13 +50,30 @@ public class PdfAiController {
      * Shared scheduler for SSE heartbeats. Daemon threads so JVM shutdown
      * is not blocked by idle pings. One pool covers every concurrent
      * stream — each emitter takes a single recurring task.
+     *
+     * <p>Pool size scales with the available CPUs (with a floor of 4) so
+     * that the third+ concurrent SSE stream can still get its heartbeat
+     * ticks — otherwise idle proxies tear the connection down.</p>
      */
     private final ScheduledExecutorService heartbeatScheduler =
-            Executors.newScheduledThreadPool(2, r -> {
-                Thread t = new Thread(r, "ai-sse-heartbeat");
-                t.setDaemon(true);
-                return t;
-            });
+            Executors.newScheduledThreadPool(
+                    Math.max(4, Runtime.getRuntime().availableProcessors()),
+                    r -> {
+                        Thread t = new Thread(r, "ai-sse-heartbeat");
+                        t.setDaemon(true);
+                        return t;
+                    });
+
+    /**
+     * Shut the heartbeat pool down on application shutdown so we don't
+     * leak threads on hot redeploys. Daemons would die with the JVM, but
+     * Spring devtools / test contexts reuse the JVM — explicit shutdown
+     * keeps reload behaviour clean.
+     */
+    @PreDestroy
+    void shutdownHeartbeat() {
+        heartbeatScheduler.shutdownNow();
+    }
 
     @PostMapping(value = "/pdf/generate", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('PROFESSOR')")
@@ -129,15 +150,22 @@ public class PdfAiController {
 
         // Schedule heartbeat pings every 15s. Cancel as soon as the
         // stream finishes (any path: success / error / disconnect).
+        //
+        // If `send` throws, the emitter is already dead — cancel our own
+        // schedule rather than spin re-failing every interval and
+        // wasting a scheduler slot until shutdown runs.
+        AtomicReference<ScheduledFuture<?>> heartbeatRef = new AtomicReference<>();
         ScheduledFuture<?> heartbeat = heartbeatScheduler.scheduleAtFixedRate(() -> {
             if (finished.get()) return;
             try {
                 emitter.send(SseEmitter.event().name("ping").data("{}"));
             } catch (Exception e) {
-                // emitter already closed — let cancellation paths handle it
                 log.debug("Heartbeat send failed (emitter closed?): {}", e.getClass().getSimpleName());
+                ScheduledFuture<?> self = heartbeatRef.get();
+                if (self != null) self.cancel(false);
             }
         }, HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        heartbeatRef.set(heartbeat);
 
         Runnable shutdown = () -> {
             if (finished.compareAndSet(false, true)) {

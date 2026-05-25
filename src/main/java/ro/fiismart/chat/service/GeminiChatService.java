@@ -1,6 +1,7 @@
 package ro.fiismart.chat.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -19,12 +20,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Orchestrates one chat turn end-to-end:
@@ -77,13 +79,29 @@ public class GeminiChatService {
     /**
      * Shared scheduler for SSE heartbeats. Daemon threads — JVM shutdown
      * is not blocked by idle pings.
+     *
+     * <p>Pool size scales with the available CPUs (with a floor of 4) so
+     * that the third+ concurrent SSE stream still gets reliable
+     * heartbeat ticks. With only 2 threads, a slow ping would block the
+     * pool and idle proxies would tear down healthy streams.</p>
      */
     private final ScheduledExecutorService heartbeatScheduler =
-            Executors.newScheduledThreadPool(2, r -> {
-                Thread t = new Thread(r, "chat-sse-heartbeat");
-                t.setDaemon(true);
-                return t;
-            });
+            Executors.newScheduledThreadPool(
+                    Math.max(4, Runtime.getRuntime().availableProcessors()),
+                    r -> {
+                        Thread t = new Thread(r, "chat-sse-heartbeat");
+                        t.setDaemon(true);
+                        return t;
+                    });
+
+    /**
+     * Shut the heartbeat pool down on application shutdown so we don't
+     * leak threads on hot redeploys or test-context restarts.
+     */
+    @PreDestroy
+    void shutdownHeartbeat() {
+        heartbeatScheduler.shutdownNow();
+    }
 
     public GeminiChatService(GeminiClient geminiClient,
                              ChatContextBuilder contextBuilder,
@@ -113,14 +131,21 @@ public class GeminiChatService {
         AtomicBoolean finished = new AtomicBoolean(false);
         GeminiClient.StreamCancelHandle cancel = new GeminiClient.StreamCancelHandle();
 
+        // If `send` throws, the emitter is already dead — cancel the
+        // schedule rather than re-failing every interval and uselessly
+        // tying up a scheduler slot until the outer shutdown runs.
+        AtomicReference<ScheduledFuture<?>> heartbeatRef = new AtomicReference<>();
         ScheduledFuture<?> heartbeat = heartbeatScheduler.scheduleAtFixedRate(() -> {
             if (finished.get()) return;
             try {
                 emitter.send(SseEmitter.event().name("ping").data("{}"));
             } catch (Exception e) {
                 log.debug("Chat heartbeat send failed: {}", e.getClass().getSimpleName());
+                ScheduledFuture<?> self = heartbeatRef.get();
+                if (self != null) self.cancel(false);
             }
         }, HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        heartbeatRef.set(heartbeat);
 
         Runnable shutdown = () -> {
             if (finished.compareAndSet(false, true)) {
