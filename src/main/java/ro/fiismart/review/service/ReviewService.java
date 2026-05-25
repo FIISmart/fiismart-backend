@@ -16,6 +16,9 @@ import ro.fiismart.review.dto.ReviewResponse;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -49,18 +52,21 @@ public class ReviewService {
     }
 
     public List<ReviewResponse> findByCourseId(String courseId) {
-        return reviewRepository.findByCourseIdAndDeletedFalse(courseId)
-                .stream().map(this::toResponse).toList();
+        List<Review> reviews = reviewRepository.findByCourseIdAndDeletedFalse(courseId);
+        Map<String, String> authorNames = resolveAuthorNames(reviews);
+        return reviews.stream().map(r -> toResponse(r, authorNames)).toList();
     }
 
     public List<ReviewResponse> findByStudentId(String studentId) {
-        return reviewRepository.findByStudentIdAndDeletedFalse(studentId)
-                .stream().map(this::toResponse).toList();
+        List<Review> reviews = reviewRepository.findByStudentIdAndDeletedFalse(studentId);
+        Map<String, String> authorNames = resolveAuthorNames(reviews);
+        return reviews.stream().map(r -> toResponse(r, authorNames)).toList();
     }
 
     public List<ReviewResponse> findByCourseAndStars(String courseId, int stars) {
-        return reviewRepository.findByCourseIdAndStarsAndDeletedFalse(courseId, stars)
-                .stream().map(this::toResponse).toList();
+        List<Review> reviews = reviewRepository.findByCourseIdAndStarsAndDeletedFalse(courseId, stars);
+        Map<String, String> authorNames = resolveAuthorNames(reviews);
+        return reviews.stream().map(r -> toResponse(r, authorNames)).toList();
     }
 
     public double computeAvgRating(String courseId) {
@@ -96,10 +102,29 @@ public class ReviewService {
         return reviewRepository.countByCourseIdAndDeletedFalse(courseId);
     }
 
+    private Map<String, String> resolveAuthorNames(List<Review> reviews) {
+        Set<String> ids = reviews.stream()
+                .map(Review::getStudentId)
+                .collect(Collectors.toSet());
+
+        Map<String, String> resolved = userRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(User::getId,
+                u -> u.getDisplayName() != null ? u.getDisplayName() : "Utilizator necunoscut"));
+
+        ids.forEach(id -> resolved.putIfAbsent(id, "Utilizator necunoscut"));
+        return resolved;
+    }
+
     private ReviewResponse toResponse(Review r) {
         String authorName = userRepository.findById(r.getStudentId())
                 .map(User::getDisplayName)
                 .orElse("Utilizator necunoscut");
+        return toResponse(r, Map.of(r.getStudentId(), authorName));
+    }
+
+    private ReviewResponse toResponse(Review r, Map<String, String> authorNames) {
+        String authorName = authorNames.getOrDefault(r.getStudentId(), "Utilizator necunoscut");
+
         return ReviewResponse.builder()
                 .id(r.getId())
                 .studentId(r.getStudentId())
