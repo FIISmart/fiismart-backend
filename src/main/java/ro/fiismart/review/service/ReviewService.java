@@ -8,7 +8,9 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Review;
+import ro.fiismart.common.model.User;
 import ro.fiismart.common.repository.ReviewRepository;
+import ro.fiismart.common.repository.UserRepository;
 import ro.fiismart.review.dto.ReviewRequest;
 import ro.fiismart.review.dto.ReviewResponse;
 
@@ -21,6 +23,7 @@ public class ReviewService {
 
     private final ReviewRepository reviewRepository;
     private final MongoTemplate mongoTemplate;
+    private final UserRepository userRepository;
 
     public ReviewResponse create(ReviewRequest request) {
         Review review = Review.builder()
@@ -94,9 +97,13 @@ public class ReviewService {
     }
 
     private ReviewResponse toResponse(Review r) {
+        String authorName = userRepository.findById(r.getStudentId())
+                .map(User::getDisplayName)
+                .orElse("Utilizator necunoscut");
         return ReviewResponse.builder()
                 .id(r.getId())
                 .studentId(r.getStudentId())
+                .authorName(authorName)
                 .courseId(r.getCourseId())
                 .stars(r.getStars())
                 .body(r.getBody())

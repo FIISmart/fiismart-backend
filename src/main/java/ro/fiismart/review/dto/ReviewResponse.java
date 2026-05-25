@@ -11,6 +11,7 @@ public class ReviewResponse {
 
     private String id;
     private String studentId;
+    private String authorName;
     private String courseId;
     private int stars;
     private String body;
