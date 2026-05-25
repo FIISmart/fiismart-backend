@@ -45,8 +45,9 @@ import java.util.concurrent.atomic.AtomicReference;
  *       complete the emitter.</li>
  * </ol>
  *
- * <p>Tool iterations are hard-capped at {@link #MAX_TOOL_ITERATIONS} per
- * user turn to defend against a model that keeps calling tools in a loop.
+ * <p>Gemini stream rounds are hard-capped at {@link #MAX_STREAM_ITERATIONS}
+ * per user turn (currently 2 → one re-prompt allowed after a tool call)
+ * to defend against a model that keeps calling tools in a loop.
  *
  * <p>Heartbeat: a single shared {@link ScheduledExecutorService} pings
  * every 15s. Per-stream worker thread runs the blocking Gemini call so the
@@ -63,8 +64,16 @@ public class GeminiChatService {
 
     public static final long HEARTBEAT_INTERVAL_SECONDS = 15L;
 
-    /** Soft cap on tool calls per user turn to avoid runaway loops. */
-    static final int MAX_TOOL_ITERATIONS = 2;
+    /**
+     * Soft cap on the number of Gemini stream rounds per user turn. With
+     * the current value of 2 we allow at most ONE re-prompt after a tool
+     * call: the first stream may end in a function-call, we dispatch the
+     * tool, and then we re-stream once more with the tool result folded
+     * into the prompt to get a final natural-language reply. That second
+     * stream is the last one — even if it also produces a tool call, we
+     * do NOT loop again. Increase this if the UX needs deeper chains.
+     */
+    static final int MAX_STREAM_ITERATIONS = 2;
 
     /** Default title replaced after the first user message. Must match
      *  {@link ChatService#DEFAULT_TITLE}. */
@@ -174,7 +183,7 @@ public class GeminiChatService {
             // Iteration loop: each pass either ends in a Done (no further
             // tool calls in flight) or in a tool dispatch — in which case
             // we append the tool result to the prompt and re-stream up to
-            // MAX_TOOL_ITERATIONS times.
+            // MAX_STREAM_ITERATIONS times.
             String prompt = renderPrompt(systemPrompt, session.getMessages(), List.of());
             int iter = 0;
             boolean continueLoop = true;
@@ -223,7 +232,7 @@ public class GeminiChatService {
                 // If we got tool calls AND we still have budget, re-prompt
                 // Gemini with the tool result in context so it can produce
                 // a final natural-language reply.
-                if (!iterToolCalls.isEmpty() && iter < MAX_TOOL_ITERATIONS) {
+                if (!iterToolCalls.isEmpty() && iter < MAX_STREAM_ITERATIONS) {
                     prompt = renderPrompt(systemPrompt, session.getMessages(), capturedToolCalls);
                     continueLoop = true;
                 }
