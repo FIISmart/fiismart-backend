@@ -1,5 +1,6 @@
 package ro.fiismart.quizattempt.service;
 
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -42,9 +43,11 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Service
@@ -62,6 +65,14 @@ public class QuizAttemptService {
      */
     private static final long AI_GRADING_TIMEOUT_SECONDS = 30L;
 
+    /**
+     * Per-grade wall-clock cap. Strictly shorter than the overall
+     * AI_GRADING_TIMEOUT_SECONDS so a single slow Gemini call can't burn
+     * the whole budget — each question falls back individually on
+     * timeout. Picked at 20s = (overall budget − one round-trip slack).
+     */
+    private static final long AI_PER_GRADE_TIMEOUT_SECONDS = 20L;
+
     /** Default pass threshold for free-text questions that omit one explicitly. */
     private static final int DEFAULT_FREE_TEXT_PASS_THRESHOLD = 70;
 
@@ -74,6 +85,37 @@ public class QuizAttemptService {
     private final ModuleQuizRepository moduleQuizRepository;
     private final MongoTemplate mongoTemplate;
     private final AiTextGraderService aiTextGraderService;
+
+    /**
+     * Dedicated bounded executor for AI free-text grading.
+     *
+     * <p>We previously dispatched grading futures to {@code ForkJoinPool.commonPool()}.
+     * That's shared with every other parallel-stream consumer in the JVM, and a
+     * {@code CompletableFuture.cancel(true)} only flips the future's state — the
+     * underlying blocking Gemini HTTP call keeps running, occupying a commonPool
+     * worker for the whole upstream socket timeout. Under load that can starve
+     * unrelated work.</p>
+     *
+     * <p>Sized at max(4, availableProcessors()) daemon threads. Daemons so JVM
+     * shutdown doesn't have to wait for in-flight grading; explicit shutdown via
+     * {@link #shutdownAiGrading()} for clean context reload.</p>
+     */
+    private final ExecutorService aiGradingExecutor = Executors.newFixedThreadPool(
+            Math.max(4, Runtime.getRuntime().availableProcessors()),
+            new java.util.concurrent.ThreadFactory() {
+                private final AtomicInteger seq = new AtomicInteger();
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r, "ai-grading-" + seq.incrementAndGet());
+                    t.setDaemon(true);
+                    return t;
+                }
+            });
+
+    @PreDestroy
+    void shutdownAiGrading() {
+        aiGradingExecutor.shutdownNow();
+    }
 
     // ── New lifecycle flow (start → submit / abandon) ────────────────────────
 
@@ -361,9 +403,21 @@ public class QuizAttemptService {
                 // after the parallel grading wave below.
                 graded.add(null);
                 int slot = graded.size() - 1;
-                CompletableFuture<Answer> fut = CompletableFuture.supplyAsync(
-                        () -> gradeFreeText(q, in),
-                        ForkJoinPool.commonPool());
+                // Run on our dedicated bounded executor so a slow Gemini
+                // call can't pollute the JVM-wide commonPool. orTimeout
+                // converts a per-grade hang into a fallback Answer at
+                // AI_PER_GRADE_TIMEOUT_SECONDS, well inside the overall
+                // budget, instead of starving siblings that finish fast.
+                Answer originalInput = in;
+                ModuleQuizQuestion question = q;
+                CompletableFuture<Answer> fut = CompletableFuture
+                        .supplyAsync(() -> gradeFreeText(question, originalInput), aiGradingExecutor)
+                        .orTimeout(AI_PER_GRADE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                        .exceptionally(t -> {
+                            log.warn("AI grading per-grade timed out / failed (questionId={}): {}",
+                                    question.getId(), t.getClass().getSimpleName());
+                            return fallbackFreeTextAnswer(originalInput, question);
+                        });
                 pending.add(new PendingFreeText(slot, fut, in, q));
             } else if ("written".equalsIgnoreCase(type)) {
                 String expected = q.getCorrectText() == null ? "" : q.getCorrectText().trim();
