@@ -36,23 +36,44 @@ public class PdfAiService {
 
     public PdfAiGenerateResponse generate(MultipartFile pdf, int questionCount, String language)
             throws IOException {
-        validatePdf(pdf);
+        validateInputs(pdf, questionCount, language);
 
+        String normalizedLanguage = normalizeLanguage(language);
+        String prompt = PdfAiPrompts.buildPrompt(questionCount, normalizedLanguage);
+        String json = geminiClient.generateJson(prompt, pdf.getBytes(), PdfAiPrompts.RESPONSE_SCHEMA);
+
+        return parseAndValidateGeneratedJson(json);
+    }
+
+    /**
+     * Validates the PDF + parameters. Used by both the synchronous
+     * {@link #generate} flow and the streaming controller before opening
+     * an SSE connection — keeps a single source of truth for input rules.
+     */
+    public void validateInputs(MultipartFile pdf, int questionCount, String language) {
+        validatePdf(pdf);
         if (questionCount < MIN_QUESTIONS || questionCount > MAX_QUESTIONS) {
             throw new IllegalArgumentException(
                     "questionCount must be between " + MIN_QUESTIONS + " and " + MAX_QUESTIONS);
         }
-
-        String normalizedLanguage = (language == null || language.isBlank())
-                ? DEFAULT_LANGUAGE
-                : language.toLowerCase();
-        if (!SUPPORTED_LANGUAGES.contains(normalizedLanguage)) {
+        String normalized = normalizeLanguage(language);
+        if (!SUPPORTED_LANGUAGES.contains(normalized)) {
             throw new IllegalArgumentException("language must be one of: ro, en");
         }
+    }
 
-        String prompt = PdfAiPrompts.buildPrompt(questionCount, normalizedLanguage);
-        String json = geminiClient.generateJson(prompt, pdf.getBytes(), PdfAiPrompts.RESPONSE_SCHEMA);
+    /** Normalizes / defaults the language; never throws. */
+    public String normalizeLanguage(String language) {
+        return (language == null || language.isBlank())
+                ? DEFAULT_LANGUAGE
+                : language.toLowerCase();
+    }
 
+    /**
+     * Deserializes the accumulated streaming JSON into the response DTO
+     * and runs the same structural validation as {@link #generate}.
+     */
+    public PdfAiGenerateResponse parseAndValidateGeneratedJson(String json) {
         PdfAiGenerateResponse response;
         try {
             response = objectMapper.readValue(json, PdfAiGenerateResponse.class);
@@ -61,7 +82,6 @@ public class PdfAiService {
                     e.getClass().getSimpleName());
             throw new GeminiException("Gemini returned invalid quiz structure", e);
         }
-
         validateGeneratedResponse(response);
         return response;
     }
