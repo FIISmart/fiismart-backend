@@ -205,15 +205,22 @@ public class PdfAiController {
                 try {
                     if (chunk instanceof GeminiStreamChunk.TextDelta delta) {
                         accumulated.append(delta.text());
+                        // LinkedHashMap: tolerates null values and keeps
+                        // insertion order stable across runs (Jackson
+                        // walks the entry-set in order).
+                        Map<String, Object> tokenPayload = new LinkedHashMap<>();
+                        tokenPayload.put("text", delta.text());
                         emitter.send(SseEmitter.event()
                                 .name("token")
-                                .data(Map.of("text", delta.text()), MediaType.APPLICATION_JSON));
+                                .data(tokenPayload, MediaType.APPLICATION_JSON));
                     } else if (chunk instanceof GeminiStreamChunk.FunctionCall fc) {
                         // Not expected on the PDF path, but forward defensively
+                        Map<String, Object> toolCallPayload = new LinkedHashMap<>();
+                        toolCallPayload.put("name", fc.name());
+                        toolCallPayload.put("args", fc.args());
                         emitter.send(SseEmitter.event()
                                 .name("tool_call")
-                                .data(Map.of("name", fc.name(), "args", fc.args()),
-                                        MediaType.APPLICATION_JSON));
+                                .data(toolCallPayload, MediaType.APPLICATION_JSON));
                     } else if (chunk instanceof GeminiStreamChunk.Done done) {
                         log.debug("AI PDF stream done user={} finishReason={}", userId, done.finishReason());
                     }
@@ -265,9 +272,11 @@ public class PdfAiController {
 
     private static void sendErrorAndComplete(SseEmitter emitter, String message) {
         try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("message", message);
             emitter.send(SseEmitter.event()
                     .name("error")
-                    .data(Map.of("message", message), MediaType.APPLICATION_JSON));
+                    .data(payload, MediaType.APPLICATION_JSON));
         } catch (IOException ignored) {
             // emitter not yet open / client gone — nothing actionable
         }

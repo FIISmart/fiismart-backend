@@ -213,9 +213,10 @@ public class GeminiChatService {
                     }
                     tc.setResult(result);
                     capturedToolCalls.add(tc);
-                    sendEvent(emitter, "tool_result",
-                            Map.of("name", tc.getName(), "result", result),
-                            cancel);
+                    Map<String, Object> toolResultPayload = new LinkedHashMap<>();
+                    toolResultPayload.put("name", tc.getName());
+                    toolResultPayload.put("result", result);
+                    sendEvent(emitter, "tool_result", toolResultPayload, cancel);
                 }
 
                 iter++;
@@ -303,16 +304,23 @@ public class GeminiChatService {
         try {
             if (chunk instanceof GeminiStreamChunk.TextDelta delta) {
                 accumulated.append(delta.text());
+                // LinkedHashMap rather than Map.of: keeps insertion order
+                // stable for Jackson serialization and tolerates null
+                // values, which Gemini occasionally produces for fc.args().
+                Map<String, Object> tokenPayload = new LinkedHashMap<>();
+                tokenPayload.put("text", delta.text());
                 emitter.send(SseEmitter.event()
                         .name("token")
-                        .data(Map.of("text", delta.text()), MediaType.APPLICATION_JSON));
+                        .data(tokenPayload, MediaType.APPLICATION_JSON));
             } else if (chunk instanceof GeminiStreamChunk.FunctionCall fc) {
                 ToolCall tc = new ToolCall(fc.name(), fc.args(), null);
                 iterToolCalls.add(tc);
+                Map<String, Object> toolCallPayload = new LinkedHashMap<>();
+                toolCallPayload.put("name", fc.name());
+                toolCallPayload.put("args", fc.args());
                 emitter.send(SseEmitter.event()
                         .name("tool_call")
-                        .data(Map.of("name", fc.name(), "args", fc.args()),
-                                MediaType.APPLICATION_JSON));
+                        .data(toolCallPayload, MediaType.APPLICATION_JSON));
             } else if (chunk instanceof GeminiStreamChunk.Done done) {
                 log.debug("Chat stream chunk done user={} finishReason={}", userId, done.finishReason());
             }
