@@ -121,6 +121,13 @@ public class ChatStreamController {
                     // best effort
                 }
                 emitter.complete();
+            } finally {
+                // Belt-and-braces: shut the per-request executor down
+                // from the worker itself as its last action, so the
+                // pool is released even if the emitter's lifecycle
+                // callbacks fire late (or not at all on a clean
+                // success path before complete() propagates).
+                worker.shutdown();
             }
         });
 
