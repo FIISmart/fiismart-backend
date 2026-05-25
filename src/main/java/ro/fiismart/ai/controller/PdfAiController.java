@@ -241,11 +241,19 @@ public class PdfAiController {
                 log.debug("AI PDF stream aborted after cancel user={}", userId);
                 return;
             }
-            log.warn("AI PDF stream failed user={} err={}", userId, e.getClass().getSimpleName());
+            // User-facing payload deliberately omits the exception text:
+            // upstream messages can include stack-trace-ish hints or API
+            // keys in pathological cases. Correlate via the corrId in
+            // the server log instead.
+            String corrId = UUID.randomUUID().toString();
+            log.warn("AI PDF stream failed user={} corrId={}", userId, corrId, e);
             try {
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("message", "Serviciul AI este temporar indisponibil.");
+                payload.put("correlationId", corrId);
                 emitter.send(SseEmitter.event()
                         .name("error")
-                        .data(Map.of("message", safeMessage(e)), MediaType.APPLICATION_JSON));
+                        .data(payload, MediaType.APPLICATION_JSON));
             } catch (IOException ignored) {
                 // best effort
             }
@@ -266,8 +274,4 @@ public class PdfAiController {
         emitter.complete();
     }
 
-    private static String safeMessage(Throwable t) {
-        String msg = t.getMessage();
-        return msg == null || msg.isBlank() ? t.getClass().getSimpleName() : msg;
-    }
 }

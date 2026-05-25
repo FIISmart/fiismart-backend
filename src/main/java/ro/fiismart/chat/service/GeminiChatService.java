@@ -201,8 +201,15 @@ public class GeminiChatService {
                     try {
                         result = toolHandler.dispatch(tc.getName(), tc.getArgs(), userId);
                     } catch (Exception e) {
-                        log.warn("Chat tool '{}' failed: {}", tc.getName(), e.getClass().getSimpleName());
-                        result = Map.of("error", safeMessage(e));
+                        // Tool failures get a generic user-facing message
+                        // + correlation id (same policy as the outer
+                        // error path). The raw exception goes to logs only.
+                        String corrId = UUID.randomUUID().toString();
+                        log.warn("Chat tool '{}' failed corrId={}", tc.getName(), corrId, e);
+                        Map<String, Object> err = new LinkedHashMap<>();
+                        err.put("error", "Tool indisponibil temporar.");
+                        err.put("correlationId", corrId);
+                        result = err;
                     }
                     tc.setResult(result);
                     capturedToolCalls.add(tc);
@@ -265,11 +272,19 @@ public class GeminiChatService {
                 log.debug("Chat stream aborted after cancel session={}", session.getId());
                 return;
             }
-            log.warn("Chat stream failed session={} err={}", session.getId(), e.getClass().getSimpleName());
+            // Generic user-facing error + correlation id so the FE bug
+            // report stays joinable to our server logs. Never surface
+            // the raw exception text — upstream messages can leak
+            // sensitive detail (api key fragments, internal hostnames).
+            String corrId = UUID.randomUUID().toString();
+            log.warn("Chat stream failed session={} corrId={}", session.getId(), corrId, e);
             try {
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("message", "Serviciul AI este temporar indisponibil.");
+                payload.put("correlationId", corrId);
                 emitter.send(SseEmitter.event()
                         .name("error")
-                        .data(Map.of("message", safeMessage(e)), MediaType.APPLICATION_JSON));
+                        .data(payload, MediaType.APPLICATION_JSON));
             } catch (IOException ignored) {
                 // best effort — client may be gone
             }
@@ -422,8 +437,4 @@ public class GeminiChatService {
         return null;
     }
 
-    private static String safeMessage(Throwable t) {
-        String msg = t.getMessage();
-        return msg == null || msg.isBlank() ? t.getClass().getSimpleName() : msg;
-    }
 }

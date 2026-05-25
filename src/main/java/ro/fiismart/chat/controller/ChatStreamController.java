@@ -20,7 +20,9 @@ import ro.fiismart.chat.service.GeminiChatService;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -102,12 +104,19 @@ public class ChatStreamController {
             try {
                 geminiChatService.streamResponse(finalSession, body.routeContext(), userId, emitter);
             } catch (Exception e) {
-                log.warn("Chat stream worker failed session={}: {}",
-                        finalSession.getId(), e.getClass().getSimpleName());
+                // Don't leak exception text to the client — keep the
+                // payload generic and surface a correlation id so we
+                // can join the FE bug report to the server log line.
+                String corrId = UUID.randomUUID().toString();
+                log.warn("Chat stream worker failed session={} corrId={}",
+                        finalSession.getId(), corrId, e);
                 try {
+                    Map<String, Object> payload = new LinkedHashMap<>();
+                    payload.put("message", "Serviciul AI este temporar indisponibil.");
+                    payload.put("correlationId", corrId);
                     emitter.send(SseEmitter.event()
                             .name("error")
-                            .data(Map.of("message", safeMessage(e)), MediaType.APPLICATION_JSON));
+                            .data(payload, MediaType.APPLICATION_JSON));
                 } catch (IOException ignored) {
                     // best effort
                 }
@@ -116,10 +125,5 @@ public class ChatStreamController {
         });
 
         return emitter;
-    }
-
-    private static String safeMessage(Throwable t) {
-        String msg = t.getMessage();
-        return msg == null || msg.isBlank() ? t.getClass().getSimpleName() : msg;
     }
 }
