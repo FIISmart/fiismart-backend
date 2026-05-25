@@ -8,6 +8,8 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import ro.fiismart.ai.dto.response.FreeTextGradeResult;
+import ro.fiismart.ai.service.AiTextGraderService;
 import ro.fiismart.common.exception.ConflictException;
 import ro.fiismart.common.exception.ForbiddenException;
 import ro.fiismart.common.exception.ResourceNotFoundException;
@@ -38,6 +40,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Slf4j
 @Service
@@ -47,11 +54,26 @@ public class QuizAttemptService {
     /** Wall-clock slack on the deadline so a borderline-late submit still counts. */
     private static final int GRACE_SECONDS = 5;
 
+    /**
+     * Maximum total wall-clock time we allow for parallel AI grading across
+     * all free_text questions in one submission. If we miss the budget, the
+     * remaining questions are submitted with a null score (treated as
+     * incorrect) — the rest of the quiz still grades and persists.
+     */
+    private static final long AI_GRADING_TIMEOUT_SECONDS = 30L;
+
+    /** Default pass threshold for free-text questions that omit one explicitly. */
+    private static final int DEFAULT_FREE_TEXT_PASS_THRESHOLD = 70;
+
+    /** Minimum AI confidence below which we refuse to count an answer correct. */
+    private static final double FREE_TEXT_MIN_CONFIDENCE = 0.7;
+
     private final QuizAttemptRepository quizAttemptRepository;
     private final CourseRepository courseRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final ModuleQuizRepository moduleQuizRepository;
     private final MongoTemplate mongoTemplate;
+    private final AiTextGraderService aiTextGraderService;
 
     // ── New lifecycle flow (start → submit / abandon) ────────────────────────
 
@@ -296,9 +318,22 @@ public class QuizAttemptService {
     /**
      * Grade each submitted answer against the canonical quiz definition.
      * Returns a fresh list — never mutates the client-supplied input — and
-     * sets {@code correct} on each {@link Answer} based on the question's
-     * {@code correctIdx} / {@code correctText}. Answers for unknown question
-     * IDs are dropped (defensive: ignore noise rather than crash).
+     * sets {@code correct} on each {@link Answer}. Answers for unknown
+     * question IDs are dropped (defensive: ignore noise rather than crash).
+     *
+     * <p>Grading routes by question {@code type}:
+     * <ul>
+     *   <li>{@code multiple_choice} → index match (synchronous, instant).</li>
+     *   <li>{@code written} (legacy) → case-insensitive trim match
+     *       (synchronous, instant).</li>
+     *   <li>{@code free_text} → AI rubric grading via
+     *       {@link AiTextGraderService}. Each free-text question is graded
+     *       on a {@link CompletableFuture}; the whole batch is awaited up
+     *       to {@value #AI_GRADING_TIMEOUT_SECONDS}s. Any question that does
+     *       not complete in time is recorded with a null AI score (treated
+     *       as incorrect) so the rest of the submission still goes through.
+     *       The submission itself NEVER fails because AI grading failed.</li>
+     * </ul></p>
      */
     private List<Answer> gradeAnswers(ModuleQuiz quiz, List<Answer> clientAnswers) {
         Map<String, ModuleQuizQuestion> byId = new HashMap<>();
@@ -308,30 +343,175 @@ public class QuizAttemptService {
             }
         }
 
+        // Two passes: synchronous fast lane for MC + legacy written, then
+        // async fan-out for any free_text answers. Output order matches
+        // client input so downstream code (and UI) stays predictable.
         List<Answer> graded = new ArrayList<>(clientAnswers.size());
+        // slot index in `graded` → (future, originalInputAnswer, question)
+        List<PendingFreeText> pending = new ArrayList<>();
+
         for (Answer in : clientAnswers) {
             if (in == null || in.getQuestionId() == null) continue;
             ModuleQuizQuestion q = byId.get(in.getQuestionId());
             if (q == null) continue;  // unknown question — drop silently
 
-            boolean correct = false;
-            if ("written".equalsIgnoreCase(q.getType())) {
+            String type = q.getType() == null ? "" : q.getType();
+            if ("free_text".equalsIgnoreCase(type)) {
+                // Placeholder slot — we'll splice in the future's result
+                // after the parallel grading wave below.
+                graded.add(null);
+                int slot = graded.size() - 1;
+                CompletableFuture<Answer> fut = CompletableFuture.supplyAsync(
+                        () -> gradeFreeText(q, in),
+                        ForkJoinPool.commonPool());
+                pending.add(new PendingFreeText(slot, fut, in, q));
+            } else if ("written".equalsIgnoreCase(type)) {
                 String expected = q.getCorrectText() == null ? "" : q.getCorrectText().trim();
                 String given = in.getWrittenAnswer() == null ? "" : in.getWrittenAnswer().trim();
-                correct = !expected.isEmpty() && expected.equalsIgnoreCase(given);
+                boolean correct = !expected.isEmpty() && expected.equalsIgnoreCase(given);
+                graded.add(Answer.builder()
+                        .questionId(in.getQuestionId())
+                        .selectedIdx(in.getSelectedIdx())
+                        .writtenAnswer(in.getWrittenAnswer())
+                        .correct(correct)
+                        .build());
             } else {
                 // default to multiple_choice
-                correct = q.getCorrectIdx() != null && q.getCorrectIdx() == in.getSelectedIdx();
+                boolean correct = q.getCorrectIdx() != null && q.getCorrectIdx() == in.getSelectedIdx();
+                graded.add(Answer.builder()
+                        .questionId(in.getQuestionId())
+                        .selectedIdx(in.getSelectedIdx())
+                        .writtenAnswer(in.getWrittenAnswer())
+                        .correct(correct)
+                        .build());
             }
+        }
 
-            graded.add(Answer.builder()
-                    .questionId(in.getQuestionId())
-                    .selectedIdx(in.getSelectedIdx())
-                    .writtenAnswer(in.getWrittenAnswer())
-                    .correct(correct)
-                    .build());
+        if (!pending.isEmpty()) {
+            awaitFreeTextGrading(pending, graded);
         }
         return graded;
+    }
+
+    /**
+     * Pairs a free-text grading future with the slot it should land in and
+     * the original input — needed to build a fallback answer if the future
+     * times out or fails. Local helper, not part of the public API.
+     */
+    private record PendingFreeText(
+            int slot,
+            CompletableFuture<Answer> future,
+            Answer originalInput,
+            ModuleQuizQuestion question) {}
+
+    /**
+     * Awaits the parallel free-text grading wave with a hard wall-clock
+     * budget. On timeout / interruption, any still-pending future is
+     * replaced with a null-score fallback so the submission can complete.
+     *
+     * <p>The submission is sacred: this method MUST NOT throw any
+     * AI-related exception. All failure modes are converted to a fallback
+     * {@link Answer} with {@code correct=false} and null AI score.</p>
+     */
+    private void awaitFreeTextGrading(List<PendingFreeText> pending, List<Answer> graded) {
+        CompletableFuture<Void> all = CompletableFuture.allOf(
+                pending.stream().map(PendingFreeText::future).toArray(CompletableFuture[]::new));
+
+        try {
+            all.get(AI_GRADING_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (TimeoutException te) {
+            log.warn("AI grading timed out after {}s — {} question(s) still pending",
+                    AI_GRADING_TIMEOUT_SECONDS, pending.size());
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            log.warn("AI grading interrupted — falling back to null scores");
+        } catch (ExecutionException ee) {
+            // Individual future failures are caught inside gradeFreeText;
+            // an EE here means an unexpected wiring bug — log and continue.
+            log.warn("AI grading aggregate failed unexpectedly: {}",
+                    ee.getCause() != null ? ee.getCause().getClass().getSimpleName() : "unknown");
+        }
+
+        for (PendingFreeText p : pending) {
+            CompletableFuture<Answer> f = p.future();
+            Answer resolved = null;
+            if (f.isDone() && !f.isCompletedExceptionally() && !f.isCancelled()) {
+                try {
+                    resolved = f.getNow(null);
+                } catch (Exception ex) {
+                    log.warn("AI grading slot={} resolve failed: {}", p.slot(), ex.getClass().getSimpleName());
+                }
+            } else {
+                // Still pending or failed — cancel best-effort and fall back.
+                f.cancel(true);
+            }
+            if (resolved == null) {
+                resolved = fallbackFreeTextAnswer(p.originalInput(), p.question());
+            }
+            graded.set(p.slot(), resolved);
+        }
+    }
+
+    /**
+     * Runs a single free-text rubric grading. Wraps the AI grader's result
+     * onto an {@link Answer} that carries both the raw AI verdict and the
+     * derived boolean {@code correct} = (score ≥ threshold ∧ confidence ≥ 0.7).
+     */
+    private Answer gradeFreeText(ModuleQuizQuestion question, Answer in) {
+        int threshold = question.getPassThreshold() == null
+                ? DEFAULT_FREE_TEXT_PASS_THRESHOLD
+                : question.getPassThreshold();
+
+        FreeTextGradeResult result;
+        try {
+            result = aiTextGraderService.grade(
+                    question.getText(),
+                    question.getSampleAnswer(),
+                    question.getKeyConcepts(),
+                    in.getWrittenAnswer());
+        } catch (Exception e) {
+            // AiTextGraderService promises not to throw, but defend in depth.
+            log.warn("AI grading threw unexpectedly for questionId={}: {}",
+                    question.getId(), e.getClass().getSimpleName());
+            return fallbackFreeTextAnswer(in, question);
+        }
+
+        Double score = result == null ? null : result.score();
+        Double confidence = result == null ? null : result.confidence();
+        boolean correct = score != null
+                && confidence != null
+                && score >= threshold
+                && confidence >= FREE_TEXT_MIN_CONFIDENCE;
+
+        return Answer.builder()
+                .questionId(in.getQuestionId())
+                .selectedIdx(in.getSelectedIdx())
+                .writtenAnswer(in.getWrittenAnswer())
+                .correct(correct)
+                .aiScore(score)
+                .aiConfidence(confidence)
+                .aiReasoning(result == null ? null : result.reasoning())
+                .aiMissingConcepts(result == null ? null : result.missingConcepts())
+                .build();
+    }
+
+    /**
+     * Emit an Answer for a free-text question whose AI grading we could not
+     * complete (timeout / unexpected failure). Keeps the user's text on the
+     * record but marks the question incorrect with a null score so the UI
+     * can show "Evaluare AI indisponibilă".
+     */
+    private Answer fallbackFreeTextAnswer(Answer in, ModuleQuizQuestion q) {
+        return Answer.builder()
+                .questionId(in == null ? (q == null ? null : q.getId()) : in.getQuestionId())
+                .selectedIdx(in == null ? 0 : in.getSelectedIdx())
+                .writtenAnswer(in == null ? null : in.getWrittenAnswer())
+                .correct(false)
+                .aiScore(null)
+                .aiConfidence(null)
+                .aiReasoning(null)
+                .aiMissingConcepts(null)
+                .build();
     }
 
     /**
