@@ -296,7 +296,8 @@ public class GeminiClient {
                     sleepQuietly(backoffMs);
                     continue;
                 }
-                log.warn("Gemini stream failed status={} bodyLen={}", status, errorBody.length());
+                log.warn("Gemini stream failed status={} body={}", status,
+                        errorBody.length() > 800 ? errorBody.substring(0, 800) + "..." : errorBody);
                 throw new GeminiException("Gemini upstream HTTP error: " + status);
             } catch (GeminiException ge) {
                 throw ge;
