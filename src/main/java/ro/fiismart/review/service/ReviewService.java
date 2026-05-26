@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Review;
 import ro.fiismart.common.model.User;
+import ro.fiismart.common.repository.CourseRepository;
 import ro.fiismart.common.repository.ReviewRepository;
 import ro.fiismart.common.repository.UserRepository;
 import ro.fiismart.review.dto.ReviewRequest;
@@ -24,6 +25,7 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final MongoTemplate mongoTemplate;
     private final UserRepository userRepository;
+    private final CourseRepository courseRepository;
 
     public ReviewResponse create(ReviewRequest request) {
         Review review = Review.builder()
@@ -34,7 +36,11 @@ public class ReviewService {
                 .createdAt(new Date())
                 .deleted(false)
                 .build();
-        return toResponse(reviewRepository.save(review));
+
+        Review saved = reviewRepository.save(review);
+        syncCourseAvgRating(saved.getCourseId());
+
+        return toResponse(saved);
     }
 
     public ReviewResponse findById(String reviewId) {
@@ -87,21 +93,30 @@ public class ReviewService {
     }
 
     public void updateReview(String reviewId, int newStars, String newBody) {
-        mongoTemplate.updateFirst(
-                Query.query(Criteria.where("id").is(reviewId)),
-                new Update().set("stars", newStars).set("body", newBody),
-                Review.class);
+        reviewRepository.findById(reviewId).ifPresent(r -> {
+            mongoTemplate.updateFirst(
+                    Query.query(Criteria.where("id").is(reviewId)),
+                    new Update().set("stars", newStars).set("body", newBody),
+                    Review.class);
+            syncCourseAvgRating(r.getCourseId());
+        });
     }
 
     public void softDelete(String reviewId, String deletedByUserId) {
-        mongoTemplate.updateFirst(
-                Query.query(Criteria.where("id").is(reviewId)),
-                new Update().set("isDeleted", true).set("deletedBy", deletedByUserId),
-                Review.class);
+        reviewRepository.findById(reviewId).ifPresent(r -> {
+            mongoTemplate.updateFirst(
+                    Query.query(Criteria.where("id").is(reviewId)),
+                    new Update().set("deleted", true).set("deletedBy", deletedByUserId),
+                    Review.class);
+            syncCourseAvgRating(r.getCourseId());
+        });
     }
 
     public void deleteById(String reviewId) {
-        reviewRepository.deleteById(reviewId);
+        reviewRepository.findById(reviewId).ifPresent(r -> {
+            reviewRepository.deleteById(reviewId);
+            syncCourseAvgRating(r.getCourseId());
+        });
     }
 
     public boolean hasStudentReviewedCourse(String studentId, String courseId) {
@@ -130,6 +145,13 @@ public class ReviewService {
                 .map(User::getDisplayName)
                 .orElse("Utilizator necunoscut");
         return toResponse(r, Map.of(r.getStudentId(), authorName));
+    }
+
+    private void syncCourseAvgRating(String courseId) {
+        courseRepository.findById(courseId).ifPresent(course -> {
+            course.setAvgRating(computeAvgRating(courseId));
+            courseRepository.save(course);
+        });
     }
 
     private ReviewResponse toResponse(Review r, Map<String, String> authorNames) {
