@@ -5,6 +5,7 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
+import ro.fiismart.common.exception.ForbiddenException;
 import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.CourseModule;
@@ -107,6 +108,24 @@ public class CourseManagementService {
     public void deleteCourse(String id) {
         if (!courseRepository.existsById(id)) throw new ResourceNotFoundException("Course", id);
         courseRepository.deleteById(id);
+    }
+
+    /**
+     * Hard ownership check used by AI-driven mutations: the caller
+     * (chat tool handler) verifies the user owns the course before any
+     * write. Existing controller-driven CRUD doesn't rely on this — it
+     * trusts the caller to populate teacherId — but AI tool calls are
+     * authority-spoofable by definition, so we enforce server-side.
+     *
+     * @throws ResourceNotFoundException course does not exist
+     * @throws ForbiddenException        course exists but {@code userId} is not its teacher
+     */
+    public void assertOwner(String courseId, String userId) {
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
+        if (userId == null || !userId.equals(course.getTeacherId())) {
+            throw new ForbiddenException("Not your course");
+        }
     }
 
     // ── MODULE MANAGEMENT ─────────────────────────────────────────────────────
@@ -273,6 +292,48 @@ public class CourseManagementService {
         );
 
         return lecture != null ? LectureResponse.fromModel(lecture) : null;
+    }
+
+    /**
+     * Reorder the lectures inside a module to match {@code orderedIds},
+     * setting each lecture's {@code order} field to its index in the
+     * list. Mirrors {@link #reorderModules} at the lecture level — IDs
+     * not present in the module are silently skipped (rather than
+     * thrown) so a transient FE/AI disagreement doesn't corrupt the
+     * whole module. The caller is expected to have just listed the
+     * module's lectures, so a stale id is a one-shot anomaly.
+     */
+    public List<LectureResponse> reorderLecturesInModule(String courseId,
+                                                         String moduleId,
+                                                         List<String> orderedIds) {
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
+
+        CourseModule module = findModule(course, moduleId);
+        if (module.getLectures() == null || module.getLectures().isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, Lecture> lectureMap = module.getLectures().stream()
+                .collect(Collectors.toMap(Lecture::getId, l -> l));
+
+        List<Lecture> reordered = new ArrayList<>();
+        for (int i = 0; i < orderedIds.size(); i++) {
+            Lecture l = lectureMap.get(orderedIds.get(i));
+            if (l != null) {
+                l.setOrder(i);
+                reordered.add(l);
+            }
+        }
+        module.setLectures(reordered);
+
+        mongoTemplate.updateFirst(
+                Query.query(Criteria.where("_id").is(courseId).and("modules.id").is(moduleId)),
+                new Update().set("modules.$.lectures", reordered).set("updatedAt", new Date()),
+                Course.class
+        );
+
+        return reordered.stream().map(LectureResponse::fromModel).collect(Collectors.toList());
     }
 
     public void removeLectureFromModule(String courseId, String moduleId, String lectureId) {

@@ -7,8 +7,14 @@ import org.springframework.stereotype.Service;
 import ro.fiismart.ai.client.GeminiClient;
 import ro.fiismart.ai.client.GeminiException;
 import ro.fiismart.ai.dto.response.AiQuizDraftDTO;
+import ro.fiismart.chat.dto.ToolDispatchContext;
 import ro.fiismart.chat.dto.response.CourseDraftDTO;
+import ro.fiismart.chat.tools.BuildCourseResult;
+import ro.fiismart.chat.tools.BuildCourseSpec;
+import ro.fiismart.chat.tools.CourseBuildOrchestrator;
+import ro.fiismart.chat.tools.CourseToolHandler;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,6 +40,7 @@ public class ChatToolHandler {
 
     static final String TOOL_CREATE_QUIZ_DRAFT = "createQuizDraft";
     static final String TOOL_CREATE_COURSE_DRAFT = "createCourseDraft";
+    static final String TOOL_BUILD_FULL_COURSE = "buildFullCourse";
 
     private static final int MIN_QUIZ_QUESTIONS = 3;
     private static final int MAX_QUIZ_QUESTIONS = 20;
@@ -41,28 +48,61 @@ public class ChatToolHandler {
     private static final int MAX_MODULES = 10;
     private static final Set<String> DIFFICULTIES = Set.of("easy", "medium", "hard");
 
+    // Bounds for buildFullCourse — strictly tighter than createCourseDraft
+    // because each module/lecture/quiz becomes a real DB write.
+    private static final int BUILD_MIN_MODULES = 2;
+    private static final int BUILD_MAX_MODULES = 8;
+    private static final int BUILD_MIN_LECTURES_PER_MODULE = 1;
+    private static final int BUILD_MAX_LECTURES_PER_MODULE = 6;
+    private static final int BUILD_MIN_QUESTIONS_PER_QUIZ = 3;
+    private static final int BUILD_MAX_QUESTIONS_PER_QUIZ = 12;
+
     private final GeminiClient geminiClient;
     private final ObjectMapper objectMapper;
+    private final CourseBuildOrchestrator courseBuildOrchestrator;
+    private final CourseToolHandler courseToolHandler;
 
-    public ChatToolHandler(GeminiClient geminiClient, ObjectMapper objectMapper) {
+    public ChatToolHandler(GeminiClient geminiClient,
+                           ObjectMapper objectMapper,
+                           CourseBuildOrchestrator courseBuildOrchestrator,
+                           CourseToolHandler courseToolHandler) {
         this.geminiClient = geminiClient;
         this.objectMapper = objectMapper;
+        this.courseBuildOrchestrator = courseBuildOrchestrator;
+        this.courseToolHandler = courseToolHandler;
     }
 
     /**
      * Routes a single tool call by name. Unknown tool names throw
      * {@link IllegalArgumentException} — handled by
-     * {@code GlobalExceptionHandler} as a 400 (the global handler maps
-     * IAE → 400). {@code userId} is currently informational (logged) since
-     * draft generation has no side effects; it's accepted in the signature
-     * so adding side-effecting tools later doesn't break callers.
+     * {@code GlobalExceptionHandler} as a 400.
+     *
+     * <p>The {@code ctx} carries (1) the caller's userId for
+     * ownership/auth checks, (2) the route context so side-effecting
+     * tools can pin their target courseId without trusting AI args,
+     * and (3) a progress consumer that streams intermediate state
+     * back to the SSE client. The old legacy draft tools
+     * (createQuizDraft, createCourseDraft) ignore everything except
+     * userId — they're side-effect-free.
      */
-    public Object dispatch(String toolName, Map<String, Object> args, String userId) {
+    public Object dispatch(String toolName, Map<String, Object> args, ToolDispatchContext ctx) {
         log.info("Chat tool dispatch user={} tool={} argKeys={}",
-                userId, toolName, args == null ? "[]" : args.keySet());
+                ctx.userId(), toolName, args == null ? "[]" : args.keySet());
         return switch (toolName) {
             case TOOL_CREATE_QUIZ_DRAFT -> buildQuizDraft(args);
             case TOOL_CREATE_COURSE_DRAFT -> buildCourseDraft(args);
+            case TOOL_BUILD_FULL_COURSE -> buildFullCourse(args, ctx);
+            case CourseToolHandler.TOOL_ADD_MODULE -> courseToolHandler.addModule(args, ctx);
+            case CourseToolHandler.TOOL_UPDATE_MODULE -> courseToolHandler.updateModule(args, ctx);
+            case CourseToolHandler.TOOL_DELETE_MODULE -> courseToolHandler.deleteModule(args, ctx);
+            case CourseToolHandler.TOOL_REORDER_MODULES -> courseToolHandler.reorderModules(args, ctx);
+            case CourseToolHandler.TOOL_ADD_LECTURE -> courseToolHandler.addLecture(args, ctx);
+            case CourseToolHandler.TOOL_UPDATE_LECTURE -> courseToolHandler.updateLecture(args, ctx);
+            case CourseToolHandler.TOOL_DELETE_LECTURE -> courseToolHandler.deleteLecture(args, ctx);
+            case CourseToolHandler.TOOL_REORDER_LECTURES -> courseToolHandler.reorderLectures(args, ctx);
+            case CourseToolHandler.TOOL_ADD_MODULE_QUIZ -> courseToolHandler.addModuleQuiz(args, ctx);
+            case CourseToolHandler.TOOL_UPDATE_MODULE_QUIZ -> courseToolHandler.updateModuleQuiz(args, ctx);
+            case CourseToolHandler.TOOL_DELETE_MODULE_QUIZ -> courseToolHandler.deleteModuleQuiz(args, ctx);
             default -> throw new IllegalArgumentException("Unknown tool: " + toolName);
         };
     }
@@ -187,6 +227,46 @@ public class ChatToolHandler {
                 + "lectureTitles (titlurile lectiilor, fara continut). Returneaza JSON conform schemei.";
     }
 
+    // ── buildFullCourse ──────────────────────────────────────────────────
+
+    /**
+     * Side-effecting full-course builder. Unlike the legacy
+     * {@code createCourseDraft} (in-memory preview), this tool
+     * <em>persists</em> a complete course tree (modules + lectures +
+     * optional quizzes) into Mongo as a draft owned by the caller, and
+     * streams progress events through {@code ctx.onProgress()}.
+     *
+     * <p>Bounds are stricter than the legacy draft tool because every
+     * unit becomes a real write — runaway module counts would amplify
+     * the cost of a single chat message into hundreds of inserts.
+     */
+    Map<String, Object> buildFullCourse(Map<String, Object> args, ToolDispatchContext ctx) {
+        String subject = requireString(args, "subject");
+        String audience = requireString(args, "audience");
+        int moduleCount = clampInt(args, "moduleCount",
+                BUILD_MIN_MODULES, BUILD_MAX_MODULES, 4);
+        int lecturesPerModule = clampInt(args, "lecturesPerModule",
+                BUILD_MIN_LECTURES_PER_MODULE, BUILD_MAX_LECTURES_PER_MODULE, 3);
+        int questionsPerQuiz = clampInt(args, "questionsPerQuiz",
+                BUILD_MIN_QUESTIONS_PER_QUIZ, BUILD_MAX_QUESTIONS_PER_QUIZ, 5);
+        boolean includeQuizzes = optionalBool(args, "includeQuizzes", true);
+        String language = optionalString(args, "language", "ro");
+
+        BuildCourseSpec spec = new BuildCourseSpec(
+                subject, audience, moduleCount, lecturesPerModule,
+                questionsPerQuiz, includeQuizzes, language);
+
+        BuildCourseResult r = courseBuildOrchestrator.build(spec, ctx.userId(), ctx.onProgress());
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("courseId", r.courseId());
+        out.put("title", r.title());
+        out.put("moduleCount", r.moduleCount());
+        out.put("lectureCount", r.lectureCount());
+        out.put("quizCount", r.quizCount());
+        return out;
+    }
+
     private static Map<String, Object> courseDraftSchema() {
         return Map.of(
                 "type", "object",
@@ -257,6 +337,15 @@ public class ChatToolHandler {
         Object v = args.get(key);
         if (v instanceof String s && allowed.contains(s.toLowerCase())) {
             return s.toLowerCase();
+        }
+        return fallback;
+    }
+
+    private static String optionalString(Map<String, Object> args, String key, String fallback) {
+        if (args == null) return fallback;
+        Object v = args.get(key);
+        if (v instanceof String s && !s.isBlank()) {
+            return s.length() > 240 ? s.substring(0, 240) : s;
         }
         return fallback;
     }

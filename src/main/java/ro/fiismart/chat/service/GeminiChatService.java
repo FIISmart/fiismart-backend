@@ -9,10 +9,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import ro.fiismart.ai.client.GeminiClient;
 import ro.fiismart.ai.client.GeminiStreamChunk;
+import ro.fiismart.chat.dto.ToolDispatchContext;
 import ro.fiismart.chat.dto.request.RouteContextDTO;
 import ro.fiismart.chat.model.ChatMessage;
 import ro.fiismart.chat.model.ChatSession;
 import ro.fiismart.chat.model.ToolCall;
+import ro.fiismart.chat.tools.ToolProgressEvent;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -207,8 +209,17 @@ public class GeminiChatService {
                 //   tool_call -> tool_result -> (next stream's tokens)
                 for (ToolCall tc : iterToolCalls) {
                     Object result;
+                    final String dispatchedTool = tc.getName();
+                    // Progress consumer: each event becomes an SSE
+                    // `tool_progress` row on the client. We catch
+                    // emit failures (client disconnected) and trip
+                    // the cancel handle so the orchestrator can stop
+                    // shoveling progress into a dead emitter.
+                    ToolDispatchContext dispatchCtx = new ToolDispatchContext(
+                            userId, routeContext,
+                            ev -> emitToolProgress(emitter, dispatchedTool, ev, cancel));
                     try {
-                        result = toolHandler.dispatch(tc.getName(), tc.getArgs(), userId);
+                        result = toolHandler.dispatch(dispatchedTool, tc.getArgs(), dispatchCtx);
                     } catch (Exception e) {
                         // Tool failures get a generic user-facing message
                         // + correlation id (same policy as the outer
@@ -357,6 +368,36 @@ public class GeminiChatService {
     }
 
     /**
+     * Forwards one {@link ToolProgressEvent} to the SSE client as a
+     * {@code tool_progress} event. Falls back to the tool name from the
+     * dispatched tool when the orchestrator omitted it (some single-
+     * step handlers do — they only have one tool involved).
+     *
+     * <p>On any throw — typically the client has disconnected and the
+     * emitter is dead — we trip the cancel handle so the orchestrator
+     * stops calling the consumer for the rest of its loop.
+     */
+    private void emitToolProgress(SseEmitter emitter,
+                                  String dispatchedTool,
+                                  ToolProgressEvent ev,
+                                  GeminiClient.StreamCancelHandle cancel) {
+        if (cancel.isCancelled()) return;
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("name", ev.name() != null ? ev.name() : dispatchedTool);
+            payload.put("step", ev.step());
+            payload.put("total", ev.total());
+            payload.put("message", ev.message());
+            emitter.send(SseEmitter.event()
+                    .name("tool_progress")
+                    .data(payload, MediaType.APPLICATION_JSON));
+        } catch (Exception ioe) {
+            log.debug("Chat tool_progress send failed: {}", ioe.getClass().getSimpleName());
+            cancel.cancel();
+        }
+    }
+
+    /**
      * Serializes the system prompt + the current message window + (if
      * provided) any accumulated tool results into a single text prompt.
      *
@@ -441,7 +482,224 @@ public class GeminiChatService {
                         "required", List.of("subject", "audience", "moduleCount")
                 )
         );
-        return List.of(createQuizDraft, createCourseDraft);
+
+        // ── buildFullCourse — side-effecting, persists draft course ──
+        Map<String, Object> buildFullCourseProps = new LinkedHashMap<>();
+        buildFullCourseProps.put("subject", Map.of("type", "string"));
+        buildFullCourseProps.put("audience", Map.of("type", "string"));
+        buildFullCourseProps.put("moduleCount",
+                Map.of("type", "integer", "minimum", 2, "maximum", 8));
+        buildFullCourseProps.put("lecturesPerModule",
+                Map.of("type", "integer", "minimum", 1, "maximum", 6));
+        buildFullCourseProps.put("questionsPerQuiz",
+                Map.of("type", "integer", "minimum", 3, "maximum", 12));
+        buildFullCourseProps.put("includeQuizzes", Map.of("type", "boolean"));
+        buildFullCourseProps.put("language", Map.of("type", "string"));
+        Map<String, Object> buildFullCourse = Map.of(
+                "name", "buildFullCourse",
+                "description",
+                "Construieste si salveaza un curs complet (module + lectii + quiz-uri) ca draft. "
+                        + "Foloseste cand profesorul cere explicit crearea integrala a unui curs.",
+                "parameters", Map.of(
+                        "type", "object",
+                        "properties", buildFullCourseProps,
+                        "required", List.of("subject", "audience", "moduleCount")
+                )
+        );
+
+        // ── Modify tools — all require routeContext.courseId server-side. ──
+        String modifyHint = " Foloseste ID-urile exact din STAREA CURSULUI ACTIV "
+                + "din prompt-ul de sistem. Nu inventa ID-uri.";
+
+        Map<String, Object> addModule = Map.of(
+                "name", "addModule",
+                "description", "Adauga un modul nou la cursul activ." + modifyHint,
+                "parameters", Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "title", Map.of("type", "string"),
+                                "description", Map.of("type", "string")
+                        ),
+                        "required", List.of("title")
+                )
+        );
+
+        Map<String, Object> updateModule = Map.of(
+                "name", "updateModule",
+                "description", "Actualizeaza titlul si/sau descrierea unui modul existent." + modifyHint,
+                "parameters", Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "moduleId", Map.of("type", "string"),
+                                "title", Map.of("type", "string"),
+                                "description", Map.of("type", "string")
+                        ),
+                        "required", List.of("moduleId")
+                )
+        );
+
+        Map<String, Object> deleteModule = Map.of(
+                "name", "deleteModule",
+                "description", "Sterge un modul (cu toate lectiile si quiz-ul lui)." + modifyHint,
+                "parameters", Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "moduleId", Map.of("type", "string")
+                        ),
+                        "required", List.of("moduleId")
+                )
+        );
+
+        Map<String, Object> reorderModules = Map.of(
+                "name", "reorderModules",
+                "description", "Schimba ordinea modulelor in curs." + modifyHint,
+                "parameters", Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "orderedIds", Map.of(
+                                        "type", "array",
+                                        "items", Map.of("type", "string"),
+                                        "minItems", 1
+                                )
+                        ),
+                        "required", List.of("orderedIds")
+                )
+        );
+
+        Map<String, Object> addLectureProps = new LinkedHashMap<>();
+        addLectureProps.put("moduleId", Map.of("type", "string"));
+        addLectureProps.put("title", Map.of("type", "string"));
+        addLectureProps.put("content", Map.of("type", "string"));
+        addLectureProps.put("durationSecs", Map.of("type", "integer", "minimum", 0));
+        Map<String, Object> addLecture = Map.of(
+                "name", "addLecture",
+                "description", "Adauga o lectie noua intr-un modul." + modifyHint,
+                "parameters", Map.of(
+                        "type", "object",
+                        "properties", addLectureProps,
+                        "required", List.of("moduleId", "title")
+                )
+        );
+
+        Map<String, Object> updateLectureProps = new LinkedHashMap<>();
+        updateLectureProps.put("moduleId", Map.of("type", "string"));
+        updateLectureProps.put("lectureId", Map.of("type", "string"));
+        updateLectureProps.put("title", Map.of("type", "string"));
+        updateLectureProps.put("content", Map.of("type", "string"));
+        updateLectureProps.put("durationSecs", Map.of("type", "integer", "minimum", 0));
+        Map<String, Object> updateLecture = Map.of(
+                "name", "updateLecture",
+                "description", "Actualizeaza titlul si/sau continutul unei lectii." + modifyHint,
+                "parameters", Map.of(
+                        "type", "object",
+                        "properties", updateLectureProps,
+                        "required", List.of("moduleId", "lectureId")
+                )
+        );
+
+        Map<String, Object> deleteLecture = Map.of(
+                "name", "deleteLecture",
+                "description", "Sterge o lectie dintr-un modul." + modifyHint,
+                "parameters", Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "moduleId", Map.of("type", "string"),
+                                "lectureId", Map.of("type", "string")
+                        ),
+                        "required", List.of("moduleId", "lectureId")
+                )
+        );
+
+        Map<String, Object> reorderLectures = Map.of(
+                "name", "reorderLectures",
+                "description", "Schimba ordinea lectiilor dintr-un modul." + modifyHint,
+                "parameters", Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "moduleId", Map.of("type", "string"),
+                                "orderedIds", Map.of(
+                                        "type", "array",
+                                        "items", Map.of("type", "string"),
+                                        "minItems", 1
+                                )
+                        ),
+                        "required", List.of("moduleId", "orderedIds")
+                )
+        );
+
+        // Quiz question shape reused for add/update.
+        Map<String, Object> quizQuestionProps = new LinkedHashMap<>();
+        quizQuestionProps.put("text", Map.of("type", "string"));
+        quizQuestionProps.put("type", Map.of(
+                "type", "string",
+                "enum", List.of("multiple_choice")
+        ));
+        quizQuestionProps.put("options", Map.of(
+                "type", "array",
+                "items", Map.of("type", "string"),
+                "minItems", 2,
+                "maxItems", 4
+        ));
+        quizQuestionProps.put("correctIdx",
+                Map.of("type", "integer", "minimum", 0, "maximum", 3));
+        quizQuestionProps.put("explanation", Map.of("type", "string"));
+        Map<String, Object> quizQuestionSchema = Map.of(
+                "type", "object",
+                "properties", quizQuestionProps,
+                "required", List.of("text", "type", "options", "correctIdx")
+        );
+
+        Map<String, Object> addModuleQuizProps = new LinkedHashMap<>();
+        addModuleQuizProps.put("moduleId", Map.of("type", "string"));
+        addModuleQuizProps.put("title", Map.of("type", "string"));
+        addModuleQuizProps.put("passingScore",
+                Map.of("type", "integer", "minimum", 0, "maximum", 100));
+        addModuleQuizProps.put("timeLimit", Map.of("type", "integer", "minimum", 0));
+        addModuleQuizProps.put("questions", Map.of(
+                "type", "array",
+                "items", quizQuestionSchema,
+                "minItems", 1
+        ));
+        Map<String, Object> addModuleQuiz = Map.of(
+                "name", "addModuleQuiz",
+                "description",
+                "Creeaza (sau inlocuieste) quiz-ul atasat unui modul." + modifyHint,
+                "parameters", Map.of(
+                        "type", "object",
+                        "properties", addModuleQuizProps,
+                        "required", List.of("moduleId", "title", "questions")
+                )
+        );
+
+        Map<String, Object> updateModuleQuiz = Map.of(
+                "name", "updateModuleQuiz",
+                "description",
+                "Actualizeaza quiz-ul unui modul (titlu sau intrebari)." + modifyHint,
+                "parameters", Map.of(
+                        "type", "object",
+                        "properties", addModuleQuizProps,
+                        "required", List.of("moduleId")
+                )
+        );
+
+        Map<String, Object> deleteModuleQuiz = Map.of(
+                "name", "deleteModuleQuiz",
+                "description", "Sterge quiz-ul atasat unui modul." + modifyHint,
+                "parameters", Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "moduleId", Map.of("type", "string")
+                        ),
+                        "required", List.of("moduleId")
+                )
+        );
+
+        return List.of(
+                createQuizDraft, createCourseDraft, buildFullCourse,
+                addModule, updateModule, deleteModule, reorderModules,
+                addLecture, updateLecture, deleteLecture, reorderLectures,
+                addModuleQuiz, updateModuleQuiz, deleteModuleQuiz
+        );
     }
 
     private static String findFirstUserContent(ChatSession session) {

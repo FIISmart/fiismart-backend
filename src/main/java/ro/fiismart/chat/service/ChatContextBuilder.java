@@ -6,12 +6,16 @@ import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.CourseModule;
 import ro.fiismart.common.model.Enrollment;
 import ro.fiismart.common.model.Lecture;
+import ro.fiismart.common.model.ModuleQuiz;
 import ro.fiismart.common.model.User;
 import ro.fiismart.common.repository.CourseRepository;
 import ro.fiismart.common.repository.EnrollmentRepository;
+import ro.fiismart.common.repository.ModuleQuizRepository;
 import ro.fiismart.common.repository.UserRepository;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -33,16 +37,24 @@ public class ChatContextBuilder {
     /** Cap the "enrolled courses" line so we don't blow the token budget. */
     private static final int MAX_LISTED_COURSES = 10;
 
+    /** Hard cap on the active-course tree section. We stop emitting
+     *  lectures once this many have been printed (across all modules)
+     *  and append "..." so the model still sees that more exist. */
+    private static final int MAX_DUMPED_LECTURES = 50;
+
     private final UserRepository userRepository;
     private final CourseRepository courseRepository;
     private final EnrollmentRepository enrollmentRepository;
+    private final ModuleQuizRepository moduleQuizRepository;
 
     public ChatContextBuilder(UserRepository userRepository,
                               CourseRepository courseRepository,
-                              EnrollmentRepository enrollmentRepository) {
+                              EnrollmentRepository enrollmentRepository,
+                              ModuleQuizRepository moduleQuizRepository) {
         this.userRepository = userRepository;
         this.courseRepository = courseRepository;
         this.enrollmentRepository = enrollmentRepository;
+        this.moduleQuizRepository = moduleQuizRepository;
     }
 
     /**
@@ -68,7 +80,7 @@ public class ChatContextBuilder {
         // The prompt is deliberately diacritic-light to keep tokenization
         // consistent across model versions (Gemini handles diacritics but
         // older internal logs/cli tooling sometimes garbles them).
-        StringBuilder sb = new StringBuilder(512);
+        StringBuilder sb = new StringBuilder(1024);
         sb.append("Esti FIISmart Assistant, un asistent educational pentru platforma FIISmart (in romana).\n");
         sb.append("Utilizator: ").append(role);
         if (email != null && !email.isBlank()) {
@@ -79,9 +91,103 @@ public class ChatContextBuilder {
         sb.append("Curs activ: ").append(courseTitle).append('\n');
         sb.append("Lectia curenta: ").append(lectureLine).append('\n');
         sb.append("Cursurile inrolate: ").append(enrolledCoursesLine).append('\n');
-        sb.append("Raspunde concis, in romana. Daca utilizatorul cere sa creezi un quiz sau un curs, ");
-        sb.append("foloseste tool-urile disponibile (createQuizDraft, createCourseDraft).");
+        sb.append("Raspunde concis, in romana. Daca utilizatorul cere sa creezi un quiz sau un curs nou, ");
+        sb.append("foloseste tool-urile disponibile (buildFullCourse pentru un curs complet, ");
+        sb.append("createQuizDraft pentru un quiz preview).");
+
+        // Active course tree dump for modify tools — only when the
+        // caller is on a course page AND owns the course. We deliberately
+        // gate by ownership: leaking a non-owned course's id tree into
+        // the system prompt would let the model attempt edits the BE
+        // would then 403 anyway.
+        String ownerSub = userOpt.map(User::getCognitoSub).orElse(userId);
+        activeCourse
+                .filter(c -> ownerSub != null && ownerSub.equals(c.getTeacherId()))
+                .ifPresent(course -> appendCourseTree(sb, course));
         return sb.toString();
+    }
+
+    /**
+     * Renders the "STAREA CURSULUI ACTIV" section: a flat listing of
+     * modules, lectures, and any module quiz, each annotated with its
+     * id in square brackets. The model is instructed (via the modify-
+     * tool descriptions) to copy those bracketed ids verbatim into
+     * tool args so we never have to disambiguate at dispatch time.
+     */
+    private void appendCourseTree(StringBuilder sb, Course course) {
+        sb.append("\n\n=== STAREA CURSULUI ACTIV ===\n");
+        sb.append("ID curs: ").append(course.getId()).append('\n');
+        sb.append("Titlu: ").append(course.getTitle()).append('\n');
+        sb.append("Status: ").append(course.getStatus() == null ? "draft" : course.getStatus()).append('\n');
+
+        // Pre-index module quizzes by moduleId so we don't issue one
+        // findByModuleId per loop iteration.
+        Map<String, ModuleQuiz> quizByModule = new HashMap<>();
+        if (course.getId() != null) {
+            List<ModuleQuiz> all = moduleQuizRepository.findAllByCourseId(course.getId());
+            for (ModuleQuiz q : all) {
+                if ("module".equals(q.getQuizScope()) && q.getModuleId() != null) {
+                    quizByModule.put(q.getModuleId(), q);
+                }
+            }
+        }
+
+        List<CourseModule> modules = course.getModules();
+        if (modules == null || modules.isEmpty()) {
+            sb.append("(niciun modul)\n");
+            return;
+        }
+        sb.append("Module:\n");
+        int dumpedLectures = 0;
+        boolean truncated = false;
+
+        moduleLoop:
+        for (CourseModule m : modules) {
+            sb.append("  - [").append(safeId(m.getId())).append("] \"")
+                    .append(safeText(m.getTitle())).append("\" (ordine ")
+                    .append(m.getOrder()).append(")\n");
+
+            List<Lecture> lectures = m.getLectures();
+            if (lectures != null && !lectures.isEmpty()) {
+                sb.append("      Lectii:\n");
+                for (Lecture l : lectures) {
+                    if (dumpedLectures >= MAX_DUMPED_LECTURES) {
+                        sb.append("        - ... (mai multe lectii nemenționate)\n");
+                        truncated = true;
+                        break moduleLoop;
+                    }
+                    sb.append("        - [").append(safeId(l.getId())).append("] \"")
+                            .append(safeText(l.getTitle())).append("\" (durata ")
+                            .append(l.getDurationSecs()).append("s)\n");
+                    dumpedLectures++;
+                }
+            }
+            ModuleQuiz mq = quizByModule.get(m.getId());
+            if (mq != null) {
+                int qCount = mq.getQuestions() != null ? mq.getQuestions().size() : 0;
+                sb.append("      Quiz: [").append(safeId(mq.getId())).append("] \"")
+                        .append(safeText(mq.getTitle())).append("\" — ")
+                        .append(qCount).append(" intrebari\n");
+            }
+        }
+        if (truncated) {
+            sb.append("(...)\n");
+        }
+        sb.append("Foloseste exact aceste ID-uri cand chemi un tool de modificare. ")
+                .append("Nu inventa ID-uri.\n");
+    }
+
+    private static String safeId(String id) {
+        return id == null ? "?" : id;
+    }
+
+    private static String safeText(String t) {
+        if (t == null || t.isBlank()) return "(fara titlu)";
+        // Quotes are escaped because we wrap titles in literal " — without
+        // this a malicious title could close the quoted block early and
+        // confuse the model's id parsing.
+        String escaped = t.replace("\"", "\\\"");
+        return escaped.length() > 120 ? escaped.substring(0, 120) + "..." : escaped;
     }
 
     private static String describeRoute(RouteContextDTO ctx) {
