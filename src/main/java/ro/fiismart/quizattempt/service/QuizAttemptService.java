@@ -266,8 +266,8 @@ public class QuizAttemptService {
                 .courseId(request.getCourseId())
                 .studentId(request.getStudentId())
                 .attemptedAt(new Date())
-                .score(request.getScore())
-                .passed(request.isPassed())
+                .score(request.getScore() != null ? request.getScore() : 0)
+                .passed(Boolean.TRUE.equals(request.getPassed()))
                 .timeTakenSecs(request.getTimeTakenSecs())
                 .answers(request.getAnswers() != null ? request.getAnswers() : new ArrayList<>())
                 .build();

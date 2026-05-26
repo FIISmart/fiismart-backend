@@ -4,13 +4,22 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import ro.fiismart.common.model.LectureProgressEntry;
 import ro.fiismart.enrollment.dto.EnrollmentRequest;
 import ro.fiismart.enrollment.dto.EnrollmentResponse;
 import ro.fiismart.enrollment.service.EnrollmentService;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -21,27 +30,31 @@ public class EnrollmentController {
 
     private final EnrollmentService enrollmentService;
 
-    @PostMapping
-    public ResponseEntity<EnrollmentResponse> create(@Valid @RequestBody EnrollmentRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(enrollmentService.create(request));
-    }
-
     @GetMapping("/me/{courseId}/status")
-    public ResponseEntity<Map<String, Boolean>> checkMyEnrollment(
-            @PathVariable String courseId,
-            @AuthenticationPrincipal String currentUserId) {
-        return ResponseEntity.ok(Map.of("enrolled", enrollmentService.isEnrolled(currentUserId, courseId)));
+    @PreAuthorize("hasRole('STUDENT')")
+    public ResponseEntity<Map<String, Object>> getMyEnrollmentStatus(
+            @AuthenticationPrincipal String studentId,
+            @PathVariable String courseId) {
+        EnrollmentService.EnrollmentStatus status =
+                enrollmentService.getStatusForStudent(studentId, courseId);
+        Map<String, Object> body = new HashMap<>();
+        body.put("enrolled", status.enrolled());
+        body.put("enrollment", status.enrollment());
+        return ResponseEntity.ok(body);
     }
 
     @PostMapping("/me/{courseId}")
-    public ResponseEntity<Map<String, String>> enrollMe(
-            @PathVariable String courseId,
-            @AuthenticationPrincipal String currentUserId) {
-        EnrollmentRequest req = new EnrollmentRequest();
-        req.setStudentId(currentUserId);
-        req.setCourseId(courseId);
-        EnrollmentResponse resp = enrollmentService.create(req);
-        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("id", resp.getId()));
+    @PreAuthorize("hasRole('STUDENT')")
+    public ResponseEntity<EnrollmentResponse> enrollMe(
+            @AuthenticationPrincipal String studentId,
+            @PathVariable String courseId) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(enrollmentService.createForStudent(studentId, courseId));
+    }
+
+    @PostMapping
+    public ResponseEntity<EnrollmentResponse> create(@Valid @RequestBody EnrollmentRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(enrollmentService.create(request));
     }
 
     @GetMapping("/{id}")

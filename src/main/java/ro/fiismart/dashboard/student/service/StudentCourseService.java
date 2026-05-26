@@ -1,6 +1,8 @@
 package ro.fiismart.dashboard.student.service;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.Enrollment;
 import ro.fiismart.common.model.User;
@@ -29,7 +31,7 @@ public class StudentCourseService {
 
     public StudentCourseHeaderDTO getHeader(String studentId, String courseId) {
         Course course = courseRepository.findById(courseId)
-                .orElseThrow(() -> new RuntimeException("Course not found: " + courseId));
+                .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
 
         User teacher = course.getTeacherId() != null
                 ? userRepository.findById(course.getTeacherId()).orElse(null)
@@ -37,7 +39,7 @@ public class StudentCourseService {
 
         Enrollment enrollment = enrollmentRepository
                 .findByStudentIdAndCourseId(studentId, courseId)
-                .orElse(null);
+                .orElseThrow(() -> new AccessDeniedException("Student is not enrolled in this course"));
 
         StudentCourseHeaderDTO dto = new StudentCourseHeaderDTO();
         dto.setCourseId(course.getId());
@@ -51,8 +53,8 @@ public class StudentCourseService {
         dto.setTeacherDisplayName(teacher != null ? teacher.getDisplayName() : "");
         dto.setAvgRating(course.getAvgRating());
         dto.setEnrollmentCount(course.getEnrollmentCount());
-        dto.setEnrolled(enrollment != null);
-        dto.setOverallProgress(enrollment != null ? enrollment.getOverallProgress() : 0);
+        dto.setEnrolled(true);
+        dto.setOverallProgress(enrollment.getOverallProgress());
         dto.setFinalQuiz(studentQuizService.getQuizStatus(studentId, courseId));
         return dto;
     }

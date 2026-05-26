@@ -273,6 +273,9 @@ public class CourseManagementService {
             if (req.getVideoUrl() != null || "video".equals(nextType)) {
                 lecture.setVideoUrl(resolveVideoUrl(nextType, nextContent, req.getVideoUrl()));
             }
+            if (req.getType() != null && !"video".equals(nextType)) {
+                lecture.setVideoUrl(null);
+            }
             if (req.getPdfUrl() != null || "pdf".equals(nextType)) {
                 lecture.setPdfUrl(resolvePdfUrl(nextType, nextContent, req.getPdfUrl()));
             }
