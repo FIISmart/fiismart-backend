@@ -1,10 +1,11 @@
 package ro.fiismart.preview;
 
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Course;
@@ -28,14 +29,13 @@ public class CoursePreviewController {
 
     @PreAuthorize("hasRole('PROFESSOR')")
     @GetMapping("/courses/{courseId}")
-    public StudentCourseHeaderDTO getCoursePreview(
-            @PathVariable String courseId,
-            @AuthenticationPrincipal Jwt jwt) {
+    public StudentCourseHeaderDTO getCoursePreview(@PathVariable String courseId) {
+
+        String callerId = SecurityContextHolder.getContext().getAuthentication().getName();
 
         Course course = courseRepository.findById(courseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Course not found: " + courseId));
 
-        String callerId = jwt.getSubject();
         if (!callerId.equals(course.getTeacherId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
         }
