@@ -14,11 +14,23 @@ import ro.fiismart.common.repository.UserRepository;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import ro.fiismart.auth.dto.request.OAuthExchangeRequest;
+import ro.fiismart.auth.dto.response.OAuthExchangeResponse;
+
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -274,6 +286,93 @@ public class CognitoAuthService {
                 .password(req.getNewPassword());
         cognitoClient.confirmForgotPassword(builder.build());
         log.info("Parolă resetată pentru: {}", req.getEmail());
+    }
+
+    // ── OAUTH2 CODE EXCHANGE (federated IdP callback) ─────────────────────────
+    //
+    // The FE redirects to the Cognito Hosted UI for Google sign-in. After
+    // success Cognito sends the user back to /auth/callback?code=… and the FE
+    // needs to swap that code for tokens. Because our App Client has a
+    // client_secret, the swap must include it — and a secret in a SPA bundle
+    // is effectively public. We proxy the call through the BE instead.
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final HttpClient oauthHttpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
+
+    public OAuthExchangeResponse exchangeOAuthCode(OAuthExchangeRequest req) {
+        String domain = cognitoProperties.getHostedUiDomain();
+        if (domain == null || domain.isBlank()) {
+            log.error("aws.cognito.hosted-ui-domain is not configured — cannot exchange OAuth code");
+            throw new IllegalStateException("Cognito Hosted UI domain not configured");
+        }
+
+        Map<String, String> form = new LinkedHashMap<>();
+        form.put("grant_type", "authorization_code");
+        form.put("client_id", cognitoProperties.getClientId());
+        form.put("redirect_uri", req.getRedirectUri());
+        form.put("code", req.getCode());
+        form.put("code_verifier", req.getCodeVerifier());
+        String secret = cognitoProperties.getClientSecret();
+        if (secret != null && !secret.isBlank()) {
+            form.put("client_secret", secret);
+        }
+
+        String body = form.entrySet().stream()
+                .map(e -> URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8)
+                        + "=" + URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8))
+                .collect(Collectors.joining("&"));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("https://" + domain + "/oauth2/token"))
+                .timeout(Duration.ofSeconds(15))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .header("Accept", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> response;
+        try {
+            response = oauthHttpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            log.error("Cognito token exchange failed: {}", e.getMessage());
+            throw new RuntimeException("Cognito token exchange failed", e);
+        }
+
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            String safeBody = response.body() == null ? "" :
+                    (response.body().length() > 500 ? response.body().substring(0, 500) : response.body());
+            log.warn("Cognito token exchange returned {}: {}", response.statusCode(), safeBody);
+            // Pass through Cognito's error to the FE — it's already an OAuth-shaped JSON
+            // (e.g. {"error":"invalid_grant"}) which the FE knows how to handle.
+            throw new OAuthExchangeException(response.statusCode(), response.body());
+        }
+
+        try {
+            JsonNode json = objectMapper.readTree(response.body());
+            return new OAuthExchangeResponse(
+                    json.path("access_token").asText(null),
+                    json.path("id_token").asText(null),
+                    json.path("refresh_token").asText(null),
+                    json.path("expires_in").asLong(3600)
+            );
+        } catch (Exception e) {
+            log.error("Could not parse Cognito token response: {}", e.getMessage());
+            throw new RuntimeException("Could not parse Cognito token response", e);
+        }
+    }
+
+    public static class OAuthExchangeException extends RuntimeException {
+        private final int status;
+        private final String body;
+        public OAuthExchangeException(int status, String body) {
+            super("Cognito OAuth exchange failed: " + status);
+            this.status = status;
+            this.body = body;
+        }
+        public int getStatus() { return status; }
+        public String getBody() { return body; }
     }
 
     // ── LOGOUT ────────────────────────────────────────────────────────────────
