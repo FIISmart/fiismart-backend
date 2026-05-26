@@ -78,6 +78,42 @@ public class CognitoAdminService {
         }
     }
 
+    public void addUserToGroup(String username, String groupName) {
+        try {
+            cognitoClient.adminAddUserToGroup(AdminAddUserToGroupRequest.builder()
+                    .userPoolId(cognitoProperties.getUserPoolId())
+                    .username(username)
+                    .groupName(groupName)
+                    .build());
+            log.info("Utilizator {} adăugat în grupul Cognito: {}", username, groupName);
+        } catch (UserNotFoundException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Utilizatorul '" + username + "' nu există în Cognito.");
+        } catch (Exception e) {
+            log.error("Eroare la adăugarea în grupul Cognito {}: {}", groupName, e.getMessage());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                "Eroare la modificarea grupului în Cognito.");
+        }
+    }
+
+    public void removeUserFromGroup(String username, String groupName) {
+        try {
+            cognitoClient.adminRemoveUserFromGroup(AdminRemoveUserFromGroupRequest.builder()
+                    .userPoolId(cognitoProperties.getUserPoolId())
+                    .username(username)
+                    .groupName(groupName)
+                    .build());
+            log.info("Utilizator {} eliminat din grupul Cognito: {}", username, groupName);
+        } catch (UserNotFoundException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                "Utilizatorul '" + username + "' nu există în Cognito.");
+        } catch (Exception e) {
+            log.error("Eroare la eliminarea din grupul Cognito {}: {}", groupName, e.getMessage());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                "Eroare la modificarea grupului în Cognito.");
+        }
+    }
+
     public List<UserType> listUsersInGroup(String groupName) {
         return cognitoClient.listUsersInGroup(ListUsersInGroupRequest.builder()
                 .userPoolId(cognitoProperties.getUserPoolId())

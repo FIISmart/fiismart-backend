@@ -35,12 +35,27 @@ public class CognitoUserSyncService {
         Optional<User> bySub = userRepository.findByCognitoSub(sub);
         if (bySub.isPresent()) {
             User existing = bySub.get();
+            boolean dirty = false;
             // Actualizăm cognitoUsername dacă lipsea (migrare date vechi).
             if (existing.getCognitoUsername() == null && cognitoUsername != null) {
                 existing.setCognitoUsername(cognitoUsername);
-                return userRepository.save(existing);
+                dirty = true;
             }
-            return existing;
+            // Promovam rolul în baza grupurilor curente din Cognito. Cognito este
+            // sursa de adevăr pentru promovare la admin/professor — fără asta,
+            // un user creat ca STUDENT și adăugat ulterior în grupul ADMIN
+            // rămâne STUDENT în MongoDB la urmatoarele login-uri. NU coborâm
+            // rolul (un PROFESSOR scos din grup rămâne PROFESSOR în DB) pentru
+            // a evita downgrade accidental al utilizatorilor cu role manual.
+            String groupRole = determineRoleOrNull(groups);
+            if (groupRole != null && shouldUpgradeRole(existing.getRole(), groupRole)) {
+                log.info("[Sync] Promovare rol pentru {}: {} → {} (din grupuri Cognito)",
+                        existing.getEmail(), existing.getRole(), groupRole);
+                existing.setRole(groupRole);
+                existing.setNeedsRoleSelection(false);
+                dirty = true;
+            }
+            return dirty ? userRepository.save(existing) : existing;
         }
 
         String emailNorm = (email != null && !email.isBlank()) ? email.toLowerCase().trim() : null;
@@ -74,7 +89,7 @@ public class CognitoUserSyncService {
         // Grupul intern Cognito (ex: "eu-north-1_puAbduwjE_Google") nu înseamnă rol ales.
         boolean hasRoleGroup = groups != null && groups.stream()
                 .anyMatch(g -> g.equalsIgnoreCase("STUDENT") || g.equalsIgnoreCase("PROFESSOR")
-                        || g.equalsIgnoreCase("TEACHER"));
+                        || g.equalsIgnoreCase("TEACHER") || g.equalsIgnoreCase("ADMIN"));
         boolean needsRoleSelection = isFederated && !hasRoleGroup;
         String role = needsRoleSelection ? null : determineRole(groups);
         String displayName = (name != null && !name.isBlank()) ? name
@@ -111,8 +126,39 @@ public class CognitoUserSyncService {
     private String determineRole(List<String> groups) {
         if (groups == null || groups.isEmpty()) return "student";
         for (String g : groups) {
+            if (g.equalsIgnoreCase("ADMIN")) return "admin";
             if (g.equalsIgnoreCase("TEACHER") || g.equalsIgnoreCase("PROFESSOR")) return "professor";
         }
         return "student";
+    }
+
+    /**
+     * Returns the role implied by the Cognito groups, or null when none of
+     * the role-bearing groups (ADMIN / PROFESSOR / TEACHER) are present.
+     * Used to decide if we should UPGRADE an existing user's role — we
+     * deliberately don't want a missing group to downgrade them to student.
+     */
+    private String determineRoleOrNull(List<String> groups) {
+        if (groups == null || groups.isEmpty()) return null;
+        for (String g : groups) {
+            if (g.equalsIgnoreCase("ADMIN")) return "admin";
+            if (g.equalsIgnoreCase("TEACHER") || g.equalsIgnoreCase("PROFESSOR")) return "professor";
+        }
+        return null;
+    }
+
+    /** admin > professor > student > null. Only upgrade, never downgrade. */
+    private boolean shouldUpgradeRole(String current, String candidate) {
+        return rank(candidate) > rank(current);
+    }
+
+    private int rank(String role) {
+        if (role == null) return 0;
+        return switch (role.toLowerCase()) {
+            case "admin" -> 3;
+            case "professor", "teacher" -> 2;
+            case "student" -> 1;
+            default -> 0;
+        };
     }
 }

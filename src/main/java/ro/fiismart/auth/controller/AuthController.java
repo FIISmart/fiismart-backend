@@ -8,6 +8,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import ro.fiismart.auth.dto.request.*;
 import ro.fiismart.auth.dto.response.AuthResponse;
+import ro.fiismart.auth.dto.response.OAuthExchangeResponse;
 import ro.fiismart.auth.dto.response.UserResponse;
 import ro.fiismart.auth.service.CognitoAuthService;
 
@@ -61,6 +62,25 @@ public class AuthController {
     @PostMapping("/refresh")
     public ResponseEntity<AuthResponse> refresh(@Valid @RequestBody RefreshRequest req) {
         return ResponseEntity.ok(authService.refresh(req));
+    }
+
+    /**
+     * Proxy the Cognito OAuth2 authorization-code exchange. The FE redirects
+     * to the Cognito Hosted UI for federated sign-in (Google), gets a code
+     * back at /auth/callback, then POSTs {code, codeVerifier, redirectUri}
+     * here. We add the client_secret server-side and return the tokens.
+     */
+    @PostMapping("/oauth/exchange")
+    public ResponseEntity<?> oauthExchange(@Valid @RequestBody OAuthExchangeRequest req) {
+        try {
+            return ResponseEntity.ok(authService.exchangeOAuthCode(req));
+        } catch (CognitoAuthService.OAuthExchangeException e) {
+            // Pass Cognito's status + JSON error body through (e.g. invalid_grant,
+            // expired_code) so the FE can show a meaningful message.
+            return ResponseEntity.status(e.getStatus())
+                    .header("Content-Type", "application/json")
+                    .body(e.getBody());
+        }
     }
 
     @PostMapping("/forgot-password")

@@ -14,12 +14,23 @@ import ro.fiismart.common.repository.UserRepository;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import ro.fiismart.auth.dto.request.OAuthExchangeRequest;
+import ro.fiismart.auth.dto.response.OAuthExchangeResponse;
+
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.Date;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -40,46 +51,27 @@ public class CognitoAuthService {
         log.info("  Region:       {}", cognitoProperties.getRegion());
         log.info("  User Pool ID: {}", cognitoProperties.getUserPoolId());
         log.info("  Client ID:    {}", cognitoProperties.getClientId());
-        log.info("  Has Secret:   {}", hasClientSecret());
         log.info("  JWKS URI:     {}", cognitoProperties.getJwksUri());
-        if (!hasClientSecret()) {
-            log.warn("  [!] AWS_COGNITO_CLIENT_SECRET nu este setat. " +
-                     "Dacă App Client-ul are secret configurat, autentificarea va eșua.");
-        }
+        log.info("  Client secret configured: {}",
+                cognitoProperties.getClientSecret() != null
+                        && !cognitoProperties.getClientSecret().isBlank());
     }
 
-    // ── SECRET HASH ───────────────────────────────────────────────────────────
-
-    private boolean hasClientSecret() {
-        String s = cognitoProperties.getClientSecret();
-        return s != null && !s.isBlank();
-    }
-
-    /**
-     * Calculează SECRET_HASH = Base64(HMAC-SHA256(email + clientId)).
-     * În acest User Pool, Cognito username = adresa de email a utilizatorului.
-     */
-    private String computeSecretHash(String email) {
+    // ── SECRET_HASH helper ────────────────────────────────────────────────────
+    // Cognito requires this when the App Client has a client_secret.
+    // Formula: HmacSHA256(clientSecret, username + clientId), Base64-encoded.
+    private String secretHash(String username) {
+        String secret = cognitoProperties.getClientSecret();
+        if (secret == null || secret.isBlank()) return null;
         try {
-            String message = email + cognitoProperties.getClientId();
             Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(
-                    cognitoProperties.getClientSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"
-            ));
-            byte[] rawHmac = mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(rawHmac);
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            mac.update(username.getBytes(StandardCharsets.UTF_8));
+            byte[] raw = mac.doFinal(cognitoProperties.getClientId().getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(raw);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to compute Cognito SECRET_HASH", e);
+            throw new IllegalStateException("Failed to compute Cognito SECRET_HASH", e);
         }
-    }
-
-    /** Adaugă SECRET_HASH în params — email-ul este întotdeauna Cognito username în acest pool. */
-    private Map<String, String> authParams(String email, Map<String, String> base) {
-        Map<String, String> params = new HashMap<>(base);
-        if (hasClientSecret()) {
-            params.put("SECRET_HASH", computeSecretHash(email));
-        }
-        return params;
     }
 
     // ── REGISTER ──────────────────────────────────────────────────────────────
@@ -87,6 +79,7 @@ public class CognitoAuthService {
     public void register(RegisterRequest req) {
         SignUpRequest.Builder builder = SignUpRequest.builder()
                 .clientId(cognitoProperties.getClientId())
+                .secretHash(secretHash(req.getEmail()))
                 .username(req.getEmail())
                 .password(req.getPassword())
                 .userAttributes(
@@ -95,9 +88,6 @@ public class CognitoAuthService {
                         AttributeType.builder().name("family_name").value(req.getLastName()).build(),
                         AttributeType.builder().name("name").value(req.getFirstName() + " " + req.getLastName()).build()
                 );
-        if (hasClientSecret()) {
-            builder.secretHash(computeSecretHash(req.getEmail()));
-        }
 
         SignUpResponse signUp;
         try {
@@ -182,11 +172,9 @@ public class CognitoAuthService {
     public void verifyEmail(VerifyEmailRequest req) {
         ConfirmSignUpRequest.Builder builder = ConfirmSignUpRequest.builder()
                 .clientId(cognitoProperties.getClientId())
+                .secretHash(secretHash(req.getEmail()))
                 .username(req.getEmail())
                 .confirmationCode(req.getCode());
-        if (hasClientSecret()) {
-            builder.secretHash(computeSecretHash(req.getEmail()));
-        }
         cognitoClient.confirmSignUp(builder.build());
         log.info("Email verificat: {}", req.getEmail());
     }
@@ -196,20 +184,19 @@ public class CognitoAuthService {
     public void resendVerificationCode(ResendVerificationRequest req) {
         ResendConfirmationCodeRequest.Builder builder = ResendConfirmationCodeRequest.builder()
                 .clientId(cognitoProperties.getClientId())
+                .secretHash(secretHash(req.getEmail()))
                 .username(req.getEmail());
-        if (hasClientSecret()) {
-            builder.secretHash(computeSecretHash(req.getEmail()));
-        }
         cognitoClient.resendConfirmationCode(builder.build());
     }
 
     // ── LOGIN ─────────────────────────────────────────────────────────────────
 
     public AuthResponse login(LoginRequest req) {
-        Map<String, String> params = authParams(req.getEmail(), Map.of(
-                "USERNAME", req.getEmail(),
-                "PASSWORD", req.getPassword()
-        ));
+        java.util.Map<String, String> params = new java.util.LinkedHashMap<>();
+        params.put("USERNAME", req.getEmail());
+        params.put("PASSWORD", req.getPassword());
+        String sh = secretHash(req.getEmail());
+        if (sh != null) params.put("SECRET_HASH", sh);
 
         AuthenticationResultType tokens;
         try {
@@ -252,10 +239,10 @@ public class CognitoAuthService {
     // ── REFRESH ───────────────────────────────────────────────────────────────
 
     public AuthResponse refresh(RefreshRequest req) {
-        // SECRET_HASH = HMAC(email + clientId) — Cognito username = email în acest pool
-        Map<String, String> params = authParams(req.getEmail(), Map.of(
-                "REFRESH_TOKEN", req.getRefreshToken()
-        ));
+        java.util.Map<String, String> params = new java.util.LinkedHashMap<>();
+        params.put("REFRESH_TOKEN", req.getRefreshToken());
+        String sh = secretHash(req.getEmail());
+        if (sh != null) params.put("SECRET_HASH", sh);
 
         AuthenticationResultType tokens = cognitoClient.initiateAuth(
                 InitiateAuthRequest.builder()
@@ -283,10 +270,8 @@ public class CognitoAuthService {
         software.amazon.awssdk.services.cognitoidentityprovider.model.ForgotPasswordRequest.Builder builder =
                 software.amazon.awssdk.services.cognitoidentityprovider.model.ForgotPasswordRequest.builder()
                         .clientId(cognitoProperties.getClientId())
+                        .secretHash(secretHash(req.getEmail()))
                         .username(req.getEmail());
-        if (hasClientSecret()) {
-            builder.secretHash(computeSecretHash(req.getEmail()));
-        }
         cognitoClient.forgotPassword(builder.build());
     }
 
@@ -295,14 +280,99 @@ public class CognitoAuthService {
     public void resetPassword(ResetPasswordRequest req) {
         ConfirmForgotPasswordRequest.Builder builder = ConfirmForgotPasswordRequest.builder()
                 .clientId(cognitoProperties.getClientId())
+                .secretHash(secretHash(req.getEmail()))
                 .username(req.getEmail())
                 .confirmationCode(req.getCode())
                 .password(req.getNewPassword());
-        if (hasClientSecret()) {
-            builder.secretHash(computeSecretHash(req.getEmail()));
-        }
         cognitoClient.confirmForgotPassword(builder.build());
         log.info("Parolă resetată pentru: {}", req.getEmail());
+    }
+
+    // ── OAUTH2 CODE EXCHANGE (federated IdP callback) ─────────────────────────
+    //
+    // The FE redirects to the Cognito Hosted UI for Google sign-in. After
+    // success Cognito sends the user back to /auth/callback?code=… and the FE
+    // needs to swap that code for tokens. Because our App Client has a
+    // client_secret, the swap must include it — and a secret in a SPA bundle
+    // is effectively public. We proxy the call through the BE instead.
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final HttpClient oauthHttpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
+
+    public OAuthExchangeResponse exchangeOAuthCode(OAuthExchangeRequest req) {
+        String domain = cognitoProperties.getHostedUiDomain();
+        if (domain == null || domain.isBlank()) {
+            log.error("aws.cognito.hosted-ui-domain is not configured — cannot exchange OAuth code");
+            throw new IllegalStateException("Cognito Hosted UI domain not configured");
+        }
+
+        Map<String, String> form = new LinkedHashMap<>();
+        form.put("grant_type", "authorization_code");
+        form.put("client_id", cognitoProperties.getClientId());
+        form.put("redirect_uri", req.getRedirectUri());
+        form.put("code", req.getCode());
+        form.put("code_verifier", req.getCodeVerifier());
+        String secret = cognitoProperties.getClientSecret();
+        if (secret != null && !secret.isBlank()) {
+            form.put("client_secret", secret);
+        }
+
+        String body = form.entrySet().stream()
+                .map(e -> URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8)
+                        + "=" + URLEncoder.encode(e.getValue(), StandardCharsets.UTF_8))
+                .collect(Collectors.joining("&"));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("https://" + domain + "/oauth2/token"))
+                .timeout(Duration.ofSeconds(15))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .header("Accept", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> response;
+        try {
+            response = oauthHttpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            log.error("Cognito token exchange failed: {}", e.getMessage());
+            throw new RuntimeException("Cognito token exchange failed", e);
+        }
+
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            String safeBody = response.body() == null ? "" :
+                    (response.body().length() > 500 ? response.body().substring(0, 500) : response.body());
+            log.warn("Cognito token exchange returned {}: {}", response.statusCode(), safeBody);
+            // Pass through Cognito's error to the FE — it's already an OAuth-shaped JSON
+            // (e.g. {"error":"invalid_grant"}) which the FE knows how to handle.
+            throw new OAuthExchangeException(response.statusCode(), response.body());
+        }
+
+        try {
+            JsonNode json = objectMapper.readTree(response.body());
+            return new OAuthExchangeResponse(
+                    json.path("access_token").asText(null),
+                    json.path("id_token").asText(null),
+                    json.path("refresh_token").asText(null),
+                    json.path("expires_in").asLong(3600)
+            );
+        } catch (Exception e) {
+            log.error("Could not parse Cognito token response: {}", e.getMessage());
+            throw new RuntimeException("Could not parse Cognito token response", e);
+        }
+    }
+
+    public static class OAuthExchangeException extends RuntimeException {
+        private final int status;
+        private final String body;
+        public OAuthExchangeException(int status, String body) {
+            super("Cognito OAuth exchange failed: " + status);
+            this.status = status;
+            this.body = body;
+        }
+        public int getStatus() { return status; }
+        public String getBody() { return body; }
     }
 
     // ── LOGOUT ────────────────────────────────────────────────────────────────
@@ -387,8 +457,14 @@ public class CognitoAuthService {
         String lastName  = spaceIdx >= 0 ? displayName.substring(spaceIdx + 1) : "";
 
         String rawRole = user.getRole() != null ? user.getRole().toLowerCase() : "student";
-        String normalizedRole = (rawRole.equals("professor") || rawRole.equals("teacher"))
-                ? "PROFESSOR" : "STUDENT";
+        String normalizedRole;
+        if (rawRole.equals("admin")) {
+            normalizedRole = "ADMIN";
+        } else if (rawRole.equals("professor") || rawRole.equals("teacher")) {
+            normalizedRole = "PROFESSOR";
+        } else {
+            normalizedRole = "STUDENT";
+        }
 
         return UserResponse.builder()
                 .id(user.getId())

@@ -33,6 +33,8 @@ public class User {
     private String cognitoUsername;
 
     private String role;
+    /** Rolul anterior promovării la admin — restaurat la retrogradare. */
+    private String baseRole;
     /** True pentru utilizatorii federați (Google) nou creați care nu și-au ales rolul încă. */
     private boolean needsRoleSelection;
     private String passwordHash;

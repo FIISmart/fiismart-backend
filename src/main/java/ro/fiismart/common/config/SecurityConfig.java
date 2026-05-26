@@ -54,9 +54,15 @@ public class SecurityConfig {
                     "/api/v1/auth/reset-password",
                     "/api/v1/auth/verify-email",
                     "/api/v1/auth/resend-verification",
-                    "/api/v1/auth/refresh"
+                    "/api/v1/auth/refresh",
+                    "/api/v1/auth/oauth/exchange"
                 ).permitAll()
                 .requestMatchers("/actuator/health").permitAll()
+                // Landing page is public — anonymous visitors read these.
+                .requestMatchers(HttpMethod.GET, "/api/v1/landing/**").permitAll()
+                // File downloads are public — <img>/<iframe> cannot send Bearer tokens.
+                .requestMatchers(HttpMethod.GET, "/api/v1/files/**").permitAll()
+                .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/v1/teacher-dashboard/**").hasRole("PROFESSOR")
                 .anyRequest().authenticated()
             )

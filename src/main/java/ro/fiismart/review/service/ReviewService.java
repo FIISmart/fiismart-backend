@@ -8,12 +8,15 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Review;
+import ro.fiismart.common.model.User;
+import ro.fiismart.common.repository.CourseRepository;
 import ro.fiismart.common.repository.ReviewRepository;
+import ro.fiismart.common.repository.UserRepository;
 import ro.fiismart.review.dto.ReviewRequest;
 import ro.fiismart.review.dto.ReviewResponse;
 
-import java.util.Date;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -21,6 +24,8 @@ public class ReviewService {
 
     private final ReviewRepository reviewRepository;
     private final MongoTemplate mongoTemplate;
+    private final UserRepository userRepository;
+    private final CourseRepository courseRepository;
 
     public ReviewResponse create(ReviewRequest request) {
         Review review = Review.builder()
@@ -31,7 +36,11 @@ public class ReviewService {
                 .createdAt(new Date())
                 .deleted(false)
                 .build();
-        return toResponse(reviewRepository.save(review));
+
+        Review saved = reviewRepository.save(review);
+        syncCourseAvgRating(saved.getCourseId());
+
+        return toResponse(saved);
     }
 
     public ReviewResponse findById(String reviewId) {
@@ -46,43 +55,68 @@ public class ReviewService {
     }
 
     public List<ReviewResponse> findByCourseId(String courseId) {
-        return reviewRepository.findByCourseIdAndDeletedFalse(courseId)
-                .stream().map(this::toResponse).toList();
+        List<Review> reviews = reviewRepository.findByCourseIdAndDeletedFalse(courseId);
+        Map<String, String> authorNames = resolveAuthorNames(reviews);
+        return reviews.stream().map(r -> toResponse(r, authorNames)).toList();
     }
 
     public List<ReviewResponse> findByStudentId(String studentId) {
-        return reviewRepository.findByStudentIdAndDeletedFalse(studentId)
-                .stream().map(this::toResponse).toList();
+        List<Review> reviews = reviewRepository.findByStudentIdAndDeletedFalse(studentId);
+        Map<String, String> authorNames = resolveAuthorNames(reviews);
+        return reviews.stream().map(r -> toResponse(r, authorNames)).toList();
     }
 
     public List<ReviewResponse> findByCourseAndStars(String courseId, int stars) {
-        return reviewRepository.findByCourseIdAndStarsAndDeletedFalse(courseId, stars)
-                .stream().map(this::toResponse).toList();
+        List<Review> reviews = reviewRepository.findByCourseIdAndStarsAndDeletedFalse(courseId, stars);
+        Map<String, String> authorNames = resolveAuthorNames(reviews);
+        return reviews.stream().map(r -> toResponse(r, authorNames)).toList();
     }
 
     public double computeAvgRating(String courseId) {
         List<Review> reviews = reviewRepository.findByCourseIdAndDeletedFalse(courseId);
         if (reviews.isEmpty()) return 0.0;
-        double total = reviews.stream().mapToInt(Review::getStars).sum();
-        return Math.round((total / reviews.size()) * 10.0) / 10.0;
+
+        Map<String, Review> latestPerStudent = new HashMap<>();
+        for (Review r : reviews) {
+            latestPerStudent.merge(r.getStudentId(), r, (current, candidate) -> {
+                Date currentCreatedAt = current.getCreatedAt();
+                Date candidateCreatedAt = candidate.getCreatedAt();
+                if (currentCreatedAt == null) return candidate;
+                if (candidateCreatedAt == null) return current;
+                return candidateCreatedAt.after(currentCreatedAt) ? candidate : current;
+            });
+        }
+
+        Collection<Review> unique = latestPerStudent.values();
+        double total = unique.stream().mapToInt(Review::getStars).sum();
+        return Math.round((total / unique.size()) * 10.0) / 10.0;
     }
 
     public void updateReview(String reviewId, int newStars, String newBody) {
-        mongoTemplate.updateFirst(
-                Query.query(Criteria.where("id").is(reviewId)),
-                new Update().set("stars", newStars).set("body", newBody),
-                Review.class);
+        reviewRepository.findById(reviewId).ifPresent(r -> {
+            mongoTemplate.updateFirst(
+                    Query.query(Criteria.where("id").is(reviewId)),
+                    new Update().set("stars", newStars).set("body", newBody),
+                    Review.class);
+            syncCourseAvgRating(r.getCourseId());
+        });
     }
 
     public void softDelete(String reviewId, String deletedByUserId) {
-        mongoTemplate.updateFirst(
-                Query.query(Criteria.where("id").is(reviewId)),
-                new Update().set("isDeleted", true).set("deletedBy", deletedByUserId),
-                Review.class);
+        reviewRepository.findById(reviewId).ifPresent(r -> {
+            mongoTemplate.updateFirst(
+                    Query.query(Criteria.where("id").is(reviewId)),
+                    new Update().set("deleted", true).set("deletedBy", deletedByUserId),
+                    Review.class);
+            syncCourseAvgRating(r.getCourseId());
+        });
     }
 
     public void deleteById(String reviewId) {
-        reviewRepository.deleteById(reviewId);
+        reviewRepository.findById(reviewId).ifPresent(r -> {
+            reviewRepository.deleteById(reviewId);
+            syncCourseAvgRating(r.getCourseId());
+        });
     }
 
     public boolean hasStudentReviewedCourse(String studentId, String courseId) {
@@ -93,10 +127,40 @@ public class ReviewService {
         return reviewRepository.countByCourseIdAndDeletedFalse(courseId);
     }
 
+    private Map<String, String> resolveAuthorNames(List<Review> reviews) {
+        Set<String> ids = reviews.stream()
+                .map(Review::getStudentId)
+                .collect(Collectors.toSet());
+
+        Map<String, String> resolved = userRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(User::getId,
+                u -> u.getDisplayName() != null ? u.getDisplayName() : "Utilizator necunoscut"));
+
+        ids.forEach(id -> resolved.putIfAbsent(id, "Utilizator necunoscut"));
+        return resolved;
+    }
+
     private ReviewResponse toResponse(Review r) {
+        String authorName = userRepository.findById(r.getStudentId())
+                .map(User::getDisplayName)
+                .orElse("Utilizator necunoscut");
+        return toResponse(r, Map.of(r.getStudentId(), authorName));
+    }
+
+    private void syncCourseAvgRating(String courseId) {
+        courseRepository.findById(courseId).ifPresent(course -> {
+            course.setAvgRating(computeAvgRating(courseId));
+            courseRepository.save(course);
+        });
+    }
+
+    private ReviewResponse toResponse(Review r, Map<String, String> authorNames) {
+        String authorName = authorNames.getOrDefault(r.getStudentId(), "Utilizator necunoscut");
+
         return ReviewResponse.builder()
                 .id(r.getId())
                 .studentId(r.getStudentId())
+                .authorName(authorName)
                 .courseId(r.getCourseId())
                 .stars(r.getStars())
                 .body(r.getBody())
