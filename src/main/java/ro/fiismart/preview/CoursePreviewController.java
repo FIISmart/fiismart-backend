@@ -40,9 +40,7 @@ public class CoursePreviewController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
         }
 
-        User teacher = course.getTeacherId() != null
-                ? userRepository.findById(course.getTeacherId()).orElse(null)
-                : null;
+        User teacher = userRepository.findById(callerId).orElse(null);
 
         StudentCourseHeaderDTO dto = new StudentCourseHeaderDTO();
         dto.setCourseId(course.getId());
