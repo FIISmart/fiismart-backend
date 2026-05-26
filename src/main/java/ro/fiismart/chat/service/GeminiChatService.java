@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import ro.fiismart.ai.client.GeminiClient;
 import ro.fiismart.ai.client.GeminiStreamChunk;
+import ro.fiismart.chat.dto.ToolDispatchContext;
 import ro.fiismart.chat.dto.request.RouteContextDTO;
 import ro.fiismart.chat.model.ChatMessage;
 import ro.fiismart.chat.model.ChatSession;
@@ -207,8 +208,12 @@ public class GeminiChatService {
                 //   tool_call -> tool_result -> (next stream's tokens)
                 for (ToolCall tc : iterToolCalls) {
                     Object result;
+                    final String dispatchedTool = tc.getName();
+                    ToolDispatchContext dispatchCtx = new ToolDispatchContext(
+                            userId, routeContext,
+                            ev -> { /* phase-5 wires this to SSE tool_progress */ });
                     try {
-                        result = toolHandler.dispatch(tc.getName(), tc.getArgs(), userId);
+                        result = toolHandler.dispatch(dispatchedTool, tc.getArgs(), dispatchCtx);
                     } catch (Exception e) {
                         // Tool failures get a generic user-facing message
                         // + correlation id (same policy as the outer
