@@ -21,7 +21,7 @@ public class LandingController {
     public Map<String, Object> getStatistics() {
         Map<String, Object> stats = new HashMap<>();
         stats.put("activeStudents", userRepository.countByRole("student"));
-        stats.put("totalTeachers", userRepository.countByRole("teacher"));
+        stats.put("totalTeachers", userRepository.countByRole("professor"));
         long publishedCoursesCount = courseRepository.findAll().stream()
                 .filter(c -> !c.isHidden())
                 .count();
