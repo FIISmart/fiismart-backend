@@ -19,6 +19,7 @@ public class CognitoProperties {
     private String region = "";
     private String userPoolId = "";
     private String clientId = "";
+    private String clientSecret = "";
     private String hostedUiDomain = "";
     private String redirectUri = "http://localhost:3000/auth/callback";
 

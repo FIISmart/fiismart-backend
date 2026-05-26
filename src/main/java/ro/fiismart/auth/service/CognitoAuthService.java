@@ -14,6 +14,10 @@ import ro.fiismart.common.repository.UserRepository;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -36,6 +40,26 @@ public class CognitoAuthService {
         log.info("  User Pool ID: {}", cognitoProperties.getUserPoolId());
         log.info("  Client ID:    {}", cognitoProperties.getClientId());
         log.info("  JWKS URI:     {}", cognitoProperties.getJwksUri());
+        log.info("  Client secret configured: {}",
+                cognitoProperties.getClientSecret() != null
+                        && !cognitoProperties.getClientSecret().isBlank());
+    }
+
+    // ── SECRET_HASH helper ────────────────────────────────────────────────────
+    // Cognito requires this when the App Client has a client_secret.
+    // Formula: HmacSHA256(clientSecret, username + clientId), Base64-encoded.
+    private String secretHash(String username) {
+        String secret = cognitoProperties.getClientSecret();
+        if (secret == null || secret.isBlank()) return null;
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            mac.update(username.getBytes(StandardCharsets.UTF_8));
+            byte[] raw = mac.doFinal(cognitoProperties.getClientId().getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(raw);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to compute Cognito SECRET_HASH", e);
+        }
     }
 
     // ── REGISTER ──────────────────────────────────────────────────────────────
@@ -43,6 +67,7 @@ public class CognitoAuthService {
     public void register(RegisterRequest req) {
         SignUpRequest.Builder builder = SignUpRequest.builder()
                 .clientId(cognitoProperties.getClientId())
+                .secretHash(secretHash(req.getEmail()))
                 .username(req.getEmail())
                 .password(req.getPassword())
                 .userAttributes(
@@ -135,6 +160,7 @@ public class CognitoAuthService {
     public void verifyEmail(VerifyEmailRequest req) {
         ConfirmSignUpRequest.Builder builder = ConfirmSignUpRequest.builder()
                 .clientId(cognitoProperties.getClientId())
+                .secretHash(secretHash(req.getEmail()))
                 .username(req.getEmail())
                 .confirmationCode(req.getCode());
         cognitoClient.confirmSignUp(builder.build());
@@ -146,6 +172,7 @@ public class CognitoAuthService {
     public void resendVerificationCode(ResendVerificationRequest req) {
         ResendConfirmationCodeRequest.Builder builder = ResendConfirmationCodeRequest.builder()
                 .clientId(cognitoProperties.getClientId())
+                .secretHash(secretHash(req.getEmail()))
                 .username(req.getEmail());
         cognitoClient.resendConfirmationCode(builder.build());
     }
@@ -153,10 +180,11 @@ public class CognitoAuthService {
     // ── LOGIN ─────────────────────────────────────────────────────────────────
 
     public AuthResponse login(LoginRequest req) {
-        Map<String, String> params = Map.of(
-                "USERNAME", req.getEmail(),
-                "PASSWORD", req.getPassword()
-        );
+        java.util.Map<String, String> params = new java.util.LinkedHashMap<>();
+        params.put("USERNAME", req.getEmail());
+        params.put("PASSWORD", req.getPassword());
+        String sh = secretHash(req.getEmail());
+        if (sh != null) params.put("SECRET_HASH", sh);
 
         AuthenticationResultType tokens;
         try {
@@ -199,9 +227,10 @@ public class CognitoAuthService {
     // ── REFRESH ───────────────────────────────────────────────────────────────
 
     public AuthResponse refresh(RefreshRequest req) {
-        Map<String, String> params = Map.of(
-                "REFRESH_TOKEN", req.getRefreshToken()
-        );
+        java.util.Map<String, String> params = new java.util.LinkedHashMap<>();
+        params.put("REFRESH_TOKEN", req.getRefreshToken());
+        String sh = secretHash(req.getEmail());
+        if (sh != null) params.put("SECRET_HASH", sh);
 
         AuthenticationResultType tokens = cognitoClient.initiateAuth(
                 InitiateAuthRequest.builder()
@@ -229,6 +258,7 @@ public class CognitoAuthService {
         software.amazon.awssdk.services.cognitoidentityprovider.model.ForgotPasswordRequest.Builder builder =
                 software.amazon.awssdk.services.cognitoidentityprovider.model.ForgotPasswordRequest.builder()
                         .clientId(cognitoProperties.getClientId())
+                        .secretHash(secretHash(req.getEmail()))
                         .username(req.getEmail());
         cognitoClient.forgotPassword(builder.build());
     }
@@ -238,6 +268,7 @@ public class CognitoAuthService {
     public void resetPassword(ResetPasswordRequest req) {
         ConfirmForgotPasswordRequest.Builder builder = ConfirmForgotPasswordRequest.builder()
                 .clientId(cognitoProperties.getClientId())
+                .secretHash(secretHash(req.getEmail()))
                 .username(req.getEmail())
                 .confirmationCode(req.getCode())
                 .password(req.getNewPassword());
