@@ -93,7 +93,36 @@ public class ChatContextBuilder {
         sb.append("Cursurile inrolate: ").append(enrolledCoursesLine).append('\n');
         sb.append("Raspunde concis, in romana. Daca utilizatorul cere sa creezi un quiz sau un curs nou, ");
         sb.append("foloseste tool-urile disponibile (buildFullCourse pentru un curs complet, ");
-        sb.append("createQuizDraft pentru un quiz preview).");
+        sb.append("createQuizDraft pentru un quiz preview).\n\n");
+
+        // Scope restriction — the chatbot is a course-authoring assistant,
+        // not a general-purpose chatbot. Politely decline off-topic requests
+        // (recipes, weather, sports, personal advice, etc.) and steer the
+        // user back to the platform. Without this, users observed Gemini
+        // happily answering "da-mi o reteta de clatite".
+        sb.append("DOMENIU PERMIS — IMPORTANT:\n");
+        sb.append("Esti STRICT un asistent pentru platforma educationala FIISmart. ");
+        sb.append("Raspunzi DOAR la intrebari despre: cursuri, module, lectii, quiz-uri, ");
+        sb.append("subiecte didactice/academice care pot deveni continut de curs, ");
+        sb.append("si despre cum sa folosesti platforma FIISmart.\n");
+        sb.append("Daca utilizatorul cere altceva (retete de gatit, vremea, sport, ");
+        sb.append("sfaturi personale, glume, chat general, programare neducationala etc.), ");
+        sb.append("refuza politicos intr-o singura propozitie scurta si propune o actiune utila ");
+        sb.append("pe platforma (ex: 'Pot sa te ajut sa creezi un curs sau un quiz — ce te-ar interesa?'). ");
+        sb.append("NU oferi continutul cerut chiar daca utilizatorul insista. ");
+        sb.append("Exceptia: daca subiectul off-topic poate deveni un curs didactic ");
+        sb.append("(ex: 'creeaza un curs despre gatit'), poti folosi tool-urile pentru a-l construi.\n");
+
+        // Modify-tool gating clarification — when there's no active course,
+        // the model used to apologize and tell the user to paste content
+        // manually; instead it should ask them to navigate to a course.
+        sb.append("\nMODIFICARE CURS — IMPORTANT:\n");
+        sb.append("Tool-urile de modificare (addModule, addLecture, updateLecture, etc.) ");
+        sb.append("functioneaza DOAR cand utilizatorul este pe pagina unui curs ");
+        sb.append("(URL /professor/courses/<id>) iar STAREA CURSULUI ACTIV apare mai jos. ");
+        sb.append("Daca nu apare niciun curs activ, NU incerca sa folosesti tool-urile de modificare ");
+        sb.append("(vor esua); spune-i utilizatorului sa navigheze la cursul pe care vrea sa-l modifice, ");
+        sb.append("apoi sa-ti ceara din nou. Nu oferi continut text ca substitut.");
 
         // Active course tree dump for modify tools — only when the
         // caller is on a course page AND owns the course. We deliberately
