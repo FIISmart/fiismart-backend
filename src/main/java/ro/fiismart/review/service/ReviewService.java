@@ -38,10 +38,7 @@ public class ReviewService {
                 .build();
 
         Review saved = reviewRepository.save(review);
-        courseRepository.findById(review.getCourseId()).ifPresent(course -> {
-            course.setAvgRating(computeAvgRating(course.getId()));
-            courseRepository.save(course);
-        });
+        syncCourseAvgRating(saved.getCourseId());
 
         return toResponse(saved);
     }
@@ -96,21 +93,30 @@ public class ReviewService {
     }
 
     public void updateReview(String reviewId, int newStars, String newBody) {
-        mongoTemplate.updateFirst(
-                Query.query(Criteria.where("id").is(reviewId)),
-                new Update().set("stars", newStars).set("body", newBody),
-                Review.class);
+        reviewRepository.findById(reviewId).ifPresent(r -> {
+            mongoTemplate.updateFirst(
+                    Query.query(Criteria.where("id").is(reviewId)),
+                    new Update().set("stars", newStars).set("body", newBody),
+                    Review.class);
+            syncCourseAvgRating(r.getCourseId());
+        });
     }
 
     public void softDelete(String reviewId, String deletedByUserId) {
-        mongoTemplate.updateFirst(
-                Query.query(Criteria.where("id").is(reviewId)),
-                new Update().set("isDeleted", true).set("deletedBy", deletedByUserId),
-                Review.class);
+        reviewRepository.findById(reviewId).ifPresent(r -> {
+            mongoTemplate.updateFirst(
+                    Query.query(Criteria.where("id").is(reviewId)),
+                    new Update().set("isDeleted", true).set("deletedBy", deletedByUserId),
+                    Review.class);
+            syncCourseAvgRating(r.getCourseId());
+        });
     }
 
     public void deleteById(String reviewId) {
-        reviewRepository.deleteById(reviewId);
+        reviewRepository.findById(reviewId).ifPresent(r -> {
+            reviewRepository.deleteById(reviewId);
+            syncCourseAvgRating(r.getCourseId());
+        });
     }
 
     public boolean hasStudentReviewedCourse(String studentId, String courseId) {
@@ -139,6 +145,13 @@ public class ReviewService {
                 .map(User::getDisplayName)
                 .orElse("Utilizator necunoscut");
         return toResponse(r, Map.of(r.getStudentId(), authorName));
+    }
+
+    private void syncCourseAvgRating(String courseId) {
+        courseRepository.findById(courseId).ifPresent(course -> {
+            course.setAvgRating(computeAvgRating(courseId));
+            courseRepository.save(course);
+        });
     }
 
     private ReviewResponse toResponse(Review r, Map<String, String> authorNames) {
