@@ -58,6 +58,8 @@ public class SecurityConfig {
                     "/api/v1/auth/oauth/exchange"
                 ).permitAll()
                 .requestMatchers("/actuator/health").permitAll()
+                // Landing page is public — anonymous visitors read these.
+                .requestMatchers(HttpMethod.GET, "/api/v1/landing/**").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/v1/teacher-dashboard/**").hasRole("PROFESSOR")
                 .anyRequest().authenticated()
