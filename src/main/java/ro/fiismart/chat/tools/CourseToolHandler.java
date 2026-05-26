@@ -394,10 +394,10 @@ public class CourseToolHandler {
             if (!(o instanceof Map<?, ?> m)) continue;
             ModuleQuizQuestionRequest q = new ModuleQuizQuestionRequest();
             Object text = m.get("text");
-            if (text instanceof String s && !s.isBlank()) q.setText(s);
+            if (text instanceof String textStr && !textStr.isBlank()) q.setText(textStr);
             else continue;
             Object type = m.get("type");
-            q.setType(type instanceof String s ? s : "multiple_choice");
+            q.setType(type instanceof String typeStr ? typeStr : "multiple_choice");
             Object opts = m.get("options");
             if (opts instanceof List<?> ol) {
                 List<String> stringOpts = new ArrayList<>();
@@ -407,7 +407,7 @@ public class CourseToolHandler {
             Object idx = m.get("correctIdx");
             if (idx instanceof Number n) q.setCorrectIdx(n.intValue());
             Object exp = m.get("explanation");
-            if (exp instanceof String s) q.setExplanation(s);
+            if (exp instanceof String expStr) q.setExplanation(expStr);
             out.add(q);
         }
         return out;
