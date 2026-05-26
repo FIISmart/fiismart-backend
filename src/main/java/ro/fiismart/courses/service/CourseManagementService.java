@@ -250,16 +250,14 @@ public class CourseManagementService {
         courseRepository.findById(courseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
 
-        // Use arrayFilters for nested array update
-        org.bson.Document filter = new org.bson.Document("elem.id", lectureId);
-        if (req.getTitle() != null) {
-            mongoTemplate.updateFirst(
-                    Query.query(Criteria.where("_id").is(courseId).and("modules.id").is(moduleId)),
-                    new Update().set("modules.$.lectures.$[elem].title", req.getTitle()),
-                    Course.class
-            );
-        }
-
+        // We used to do a separate `$[elem].title` update here with an
+        // orphaned arrayFilter Document — but the filter was never wired
+        // into the Update, so MongoDB returned
+        //   "No array filter found for identifier 'elem'"
+        // and the whole call crashed. The block below already loads the
+        // module, mutates the target lecture in-memory (including title),
+        // and writes `modules.$ = module` — covering every field in one
+        // shot. The buggy block is removed.
         Course refreshed = courseRepository.findById(courseId).orElseThrow();
         CourseModule module = findModule(refreshed, moduleId);
         Lecture lecture = module.getLectures().stream()
