@@ -12,6 +12,7 @@ import ro.fiismart.chat.dto.response.CourseDraftDTO;
 import ro.fiismart.chat.tools.BuildCourseResult;
 import ro.fiismart.chat.tools.BuildCourseSpec;
 import ro.fiismart.chat.tools.CourseBuildOrchestrator;
+import ro.fiismart.chat.tools.CourseToolHandler;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -59,13 +60,16 @@ public class ChatToolHandler {
     private final GeminiClient geminiClient;
     private final ObjectMapper objectMapper;
     private final CourseBuildOrchestrator courseBuildOrchestrator;
+    private final CourseToolHandler courseToolHandler;
 
     public ChatToolHandler(GeminiClient geminiClient,
                            ObjectMapper objectMapper,
-                           CourseBuildOrchestrator courseBuildOrchestrator) {
+                           CourseBuildOrchestrator courseBuildOrchestrator,
+                           CourseToolHandler courseToolHandler) {
         this.geminiClient = geminiClient;
         this.objectMapper = objectMapper;
         this.courseBuildOrchestrator = courseBuildOrchestrator;
+        this.courseToolHandler = courseToolHandler;
     }
 
     /**
@@ -88,6 +92,17 @@ public class ChatToolHandler {
             case TOOL_CREATE_QUIZ_DRAFT -> buildQuizDraft(args);
             case TOOL_CREATE_COURSE_DRAFT -> buildCourseDraft(args);
             case TOOL_BUILD_FULL_COURSE -> buildFullCourse(args, ctx);
+            case CourseToolHandler.TOOL_ADD_MODULE -> courseToolHandler.addModule(args, ctx);
+            case CourseToolHandler.TOOL_UPDATE_MODULE -> courseToolHandler.updateModule(args, ctx);
+            case CourseToolHandler.TOOL_DELETE_MODULE -> courseToolHandler.deleteModule(args, ctx);
+            case CourseToolHandler.TOOL_REORDER_MODULES -> courseToolHandler.reorderModules(args, ctx);
+            case CourseToolHandler.TOOL_ADD_LECTURE -> courseToolHandler.addLecture(args, ctx);
+            case CourseToolHandler.TOOL_UPDATE_LECTURE -> courseToolHandler.updateLecture(args, ctx);
+            case CourseToolHandler.TOOL_DELETE_LECTURE -> courseToolHandler.deleteLecture(args, ctx);
+            case CourseToolHandler.TOOL_REORDER_LECTURES -> courseToolHandler.reorderLectures(args, ctx);
+            case CourseToolHandler.TOOL_ADD_MODULE_QUIZ -> courseToolHandler.addModuleQuiz(args, ctx);
+            case CourseToolHandler.TOOL_UPDATE_MODULE_QUIZ -> courseToolHandler.updateModuleQuiz(args, ctx);
+            case CourseToolHandler.TOOL_DELETE_MODULE_QUIZ -> courseToolHandler.deleteModuleQuiz(args, ctx);
             default -> throw new IllegalArgumentException("Unknown tool: " + toolName);
         };
     }
