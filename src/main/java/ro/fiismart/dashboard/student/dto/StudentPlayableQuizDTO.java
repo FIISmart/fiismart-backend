@@ -4,8 +4,6 @@ import lombok.Builder;
 import lombok.Data;
 import ro.fiismart.common.model.ModuleQuiz;
 import ro.fiismart.common.model.Quiz;
-import ro.fiismart.quiz.dto.modulequiz.ModuleQuizQuestionResponse;
-import ro.fiismart.quiz.dto.QuizQuestionResponse;
 
 import java.util.List;
 
@@ -21,7 +19,7 @@ public class StudentPlayableQuizDTO {
     private int passingScore;
     private int timeLimit;
     private boolean shuffleQuestions;
-    private List<?> questions;
+    private List<StudentPlayableQuestionDTO> questions;
 
     public static StudentPlayableQuizDTO fromModuleQuiz(ModuleQuiz quiz) {
         return StudentPlayableQuizDTO.builder()
@@ -35,7 +33,7 @@ public class StudentPlayableQuizDTO {
                 .timeLimit(quiz.getTimeLimit())
                 .shuffleQuestions(quiz.isShuffleQuestions())
                 .questions(quiz.getQuestions() != null
-                        ? quiz.getQuestions().stream().map(ModuleQuizQuestionResponse::fromModel).toList()
+                        ? quiz.getQuestions().stream().map(StudentPlayableQuestionDTO::fromModuleQuestion).toList()
                         : List.of())
                 .build();
     }
@@ -50,7 +48,7 @@ public class StudentPlayableQuizDTO {
                 .timeLimit(quiz.getTimeLimit())
                 .shuffleQuestions(quiz.isShuffleQuestions())
                 .questions(quiz.getQuestions() != null
-                        ? quiz.getQuestions().stream().map(QuizQuestionResponse::fromModel).toList()
+                        ? quiz.getQuestions().stream().map(StudentPlayableQuestionDTO::fromLegacyQuestion).toList()
                         : List.of())
                 .build();
     }

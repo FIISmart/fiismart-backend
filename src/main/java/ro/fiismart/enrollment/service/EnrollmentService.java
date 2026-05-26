@@ -23,10 +23,16 @@ import java.util.List;
 public class EnrollmentService {
 
     private final EnrollmentRepository enrollmentRepository;
-    private final MongoTemplate mongoTemplate;
     private final CourseRepository courseRepository;
+    private final MongoTemplate mongoTemplate;
 
     public EnrollmentResponse create(EnrollmentRequest request) {
+        ensureCourseExists(request.getCourseId());
+        enrollmentRepository.findByStudentIdAndCourseId(request.getStudentId(), request.getCourseId())
+                .ifPresent(existing -> {
+                    throw new IllegalStateException("Student is already enrolled in this course");
+                });
+
         Enrollment enrollment = Enrollment.builder()
                 .studentId(request.getStudentId())
                 .courseId(request.getCourseId())
@@ -43,6 +49,30 @@ public class EnrollmentService {
         });
 
         return toResponse(saved);
+    }
+
+    public EnrollmentResponse createForStudent(String studentId, String courseId) {
+        ensureCourseExists(courseId);
+        return enrollmentRepository.findByStudentIdAndCourseId(studentId, courseId)
+                .map(this::toResponse)
+                .orElseGet(() -> {
+                    Enrollment enrollment = Enrollment.builder()
+                            .studentId(studentId)
+                            .courseId(courseId)
+                            .enrolledAt(new Date())
+                            .status("enrolled")
+                            .overallProgress(0)
+                            .lectureProgress(new ArrayList<>())
+                            .build();
+                    return toResponse(enrollmentRepository.save(enrollment));
+                });
+    }
+
+    public EnrollmentStatus getStatusForStudent(String studentId, String courseId) {
+        ensureCourseExists(courseId);
+        return enrollmentRepository.findByStudentIdAndCourseId(studentId, courseId)
+                .map(enrollment -> EnrollmentStatus.enrolled(toResponse(enrollment)))
+                .orElseGet(EnrollmentStatus::notEnrolled);
     }
 
     public EnrollmentResponse findById(String id) {
@@ -116,6 +146,12 @@ public class EnrollmentService {
         return enrollmentRepository.countByCourseId(courseId);
     }
 
+    private void ensureCourseExists(String courseId) {
+        if (!courseRepository.existsById(courseId)) {
+            throw new ResourceNotFoundException("Course", courseId);
+        }
+    }
+
     private EnrollmentResponse toResponse(Enrollment e) {
         return EnrollmentResponse.builder()
                 .id(e.getId())
@@ -128,5 +164,15 @@ public class EnrollmentService {
                 .lastAccessedAt(e.getLastAccessedAt())
                 .overallProgress(e.getOverallProgress())
                 .build();
+    }
+
+    public record EnrollmentStatus(boolean enrolled, EnrollmentResponse enrollment) {
+        static EnrollmentStatus enrolled(EnrollmentResponse enrollment) {
+            return new EnrollmentStatus(true, enrollment);
+        }
+
+        static EnrollmentStatus notEnrolled() {
+            return new EnrollmentStatus(false, null);
+        }
     }
 }

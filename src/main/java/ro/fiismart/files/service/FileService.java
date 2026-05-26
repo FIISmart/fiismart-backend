@@ -31,9 +31,7 @@ public class FileService {
             "application/msword",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/zip",
-            "application/x-zip-compressed",
-            "text/plain",
-            "text/markdown"
+            "application/x-zip-compressed"
     );
 
     private final GridFSBucket gridFsBucket;
@@ -50,7 +48,7 @@ public class FileService {
 
     public FileUploadResponse uploadLectureFile(MultipartFile file) {
         validate(file, DOCUMENT_TYPES, MAX_FILE_SIZE,
-                "Tip fisier nepermis pentru lectie (PDF, DOC, DOCX, ZIP, TXT, MD)");
+                "Tip fisier nepermis pentru lectie (PDF, DOC, DOCX, ZIP)");
         return store(file, "lecture");
     }
 

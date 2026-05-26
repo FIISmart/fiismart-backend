@@ -5,6 +5,7 @@
 # Maven
 target/
 *.class
+uploads/
 
 # IDE
 .idea

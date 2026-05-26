@@ -1,5 +1,6 @@
 package ro.fiismart.dashboard.student.service;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -7,6 +8,7 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import ro.fiismart.common.model.*;
 import ro.fiismart.common.repository.*;
+import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.dashboard.student.dto.*;
 
 import java.util.*;
@@ -40,10 +42,11 @@ public class StudentLectureService {
 
     public List<StudentModuleDTO> getModules(String studentId, String courseId) {
         Course course = courseRepository.findById(courseId)
-                .orElseThrow(() -> new RuntimeException("Course not found: " + courseId));
+                .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
 
         List<CourseModule> modules = course.getModules() != null ? course.getModules() : new ArrayList<>();
-        Enrollment enrollment = enrollmentRepository.findByStudentIdAndCourseId(studentId, courseId).orElse(null);
+        Enrollment enrollment = enrollmentRepository.findByStudentIdAndCourseId(studentId, courseId)
+                .orElseThrow(() -> new AccessDeniedException("Student is not enrolled in this course"));
         Map<String, LectureProgressEntry> progressMap = buildProgressMap(enrollment);
 
         List<StudentModuleDTO> result = new ArrayList<>();
@@ -73,12 +76,13 @@ public class StudentLectureService {
 
     public StudentLectureDetailDTO getLectureDetail(String studentId, String courseId, String lectureId) {
         Course course = courseRepository.findById(courseId)
-                .orElseThrow(() -> new RuntimeException("Course not found: " + courseId));
+                .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
 
         Lecture lecture = findLectureInCourse(course, lectureId);
-        if (lecture == null) throw new RuntimeException("Lecture not found: " + lectureId);
+        if (lecture == null) throw new ResourceNotFoundException("Lecture", lectureId);
 
-        Enrollment enrollment = enrollmentRepository.findByStudentIdAndCourseId(studentId, courseId).orElse(null);
+        Enrollment enrollment = enrollmentRepository.findByStudentIdAndCourseId(studentId, courseId)
+                .orElseThrow(() -> new AccessDeniedException("Student is not enrolled in this course"));
         LectureProgressEntry progress = findLatestProgress(enrollment, lectureId);
 
         StudentLectureDetailDTO dto = new StudentLectureDetailDTO();
@@ -109,14 +113,17 @@ public class StudentLectureService {
                                                                 String lectureId,
                                                                 StudentLectureProgressRequest request) {
         Course course = courseRepository.findById(courseId)
-                .orElseThrow(() -> new RuntimeException("Course not found: " + courseId));
+                .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
 
         Lecture lecture = findLectureInCourse(course, lectureId);
-        if (lecture == null) throw new RuntimeException("Lecture not found: " + lectureId);
-        updateLectureDurationIfNeeded(courseId, course, lecture, request.getDurationSecs());
+        if (lecture == null) throw new ResourceNotFoundException("Lecture", lectureId);
+        // NOTE: do NOT propagate request.getDurationSecs() into the canonical
+        // Course document from a student-authenticated path. Course metadata
+        // is owned by the instructor builder; allowing student writes here
+        // means any student can mutate the course definition for all peers.
 
         Enrollment enrollment = enrollmentRepository.findByStudentIdAndCourseId(studentId, courseId)
-                .orElseThrow(() -> new RuntimeException("Student not enrolled: " + courseId));
+                .orElseThrow(() -> new AccessDeniedException("Student is not enrolled in this course"));
 
         int watchedPercent = request.getWatchedPercent();
         if (watchedPercent < 0) watchedPercent = 0;
@@ -133,6 +140,7 @@ public class StudentLectureService {
 
         if (existingProgress != null) {
             watchedPercent = Math.max(watchedPercent, existingProgress.getWatchedPercent());
+            positionSecs = Math.max(positionSecs, existingProgress.getPositionSecs());
             completed = existingProgress.isCompleted() || completed;
         }
 
@@ -207,7 +215,7 @@ public class StudentLectureService {
 
         if (course.getModules() != null) {
             for (CourseModule module : course.getModules()) {
-                if (module.getLectures() == null) continue;
+                if (module == null || module.getLectures() == null) continue;
                 for (Lecture lecture : module.getLectures()) {
                     total++;
                     LectureProgressEntry p = progressMap.get(lecture.getId());
@@ -275,9 +283,9 @@ public class StudentLectureService {
         dto.setLectureId(lecture.getId());
         dto.setTitle(lecture.getTitle());
         dto.setType(resolveLectureType(lecture));
-        dto.setContent(resolveLectureContent(lecture));
-        dto.setVideoUrl(lecture.getVideoUrl());
-        dto.setPdfUrl(resolvePdfUrl(lecture));
+        dto.setContent(null);
+        dto.setVideoUrl(null);
+        dto.setPdfUrl(null);
         dto.setOrder(lecture.getOrder());
         dto.setDurationSecs(lecture.getDurationSecs());
         if (progress != null) {
