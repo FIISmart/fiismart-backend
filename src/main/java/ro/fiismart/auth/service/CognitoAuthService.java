@@ -14,12 +14,7 @@ import ro.fiismart.common.repository.UserRepository;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.*;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -40,46 +35,7 @@ public class CognitoAuthService {
         log.info("  Region:       {}", cognitoProperties.getRegion());
         log.info("  User Pool ID: {}", cognitoProperties.getUserPoolId());
         log.info("  Client ID:    {}", cognitoProperties.getClientId());
-        log.info("  Has Secret:   {}", hasClientSecret());
         log.info("  JWKS URI:     {}", cognitoProperties.getJwksUri());
-        if (!hasClientSecret()) {
-            log.warn("  [!] AWS_COGNITO_CLIENT_SECRET nu este setat. " +
-                     "Dacă App Client-ul are secret configurat, autentificarea va eșua.");
-        }
-    }
-
-    // ── SECRET HASH ───────────────────────────────────────────────────────────
-
-    private boolean hasClientSecret() {
-        String s = cognitoProperties.getClientSecret();
-        return s != null && !s.isBlank();
-    }
-
-    /**
-     * Calculează SECRET_HASH = Base64(HMAC-SHA256(email + clientId)).
-     * În acest User Pool, Cognito username = adresa de email a utilizatorului.
-     */
-    private String computeSecretHash(String email) {
-        try {
-            String message = email + cognitoProperties.getClientId();
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(
-                    cognitoProperties.getClientSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"
-            ));
-            byte[] rawHmac = mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(rawHmac);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to compute Cognito SECRET_HASH", e);
-        }
-    }
-
-    /** Adaugă SECRET_HASH în params — email-ul este întotdeauna Cognito username în acest pool. */
-    private Map<String, String> authParams(String email, Map<String, String> base) {
-        Map<String, String> params = new HashMap<>(base);
-        if (hasClientSecret()) {
-            params.put("SECRET_HASH", computeSecretHash(email));
-        }
-        return params;
     }
 
     // ── REGISTER ──────────────────────────────────────────────────────────────
@@ -95,9 +51,6 @@ public class CognitoAuthService {
                         AttributeType.builder().name("family_name").value(req.getLastName()).build(),
                         AttributeType.builder().name("name").value(req.getFirstName() + " " + req.getLastName()).build()
                 );
-        if (hasClientSecret()) {
-            builder.secretHash(computeSecretHash(req.getEmail()));
-        }
 
         SignUpResponse signUp;
         try {
@@ -184,9 +137,6 @@ public class CognitoAuthService {
                 .clientId(cognitoProperties.getClientId())
                 .username(req.getEmail())
                 .confirmationCode(req.getCode());
-        if (hasClientSecret()) {
-            builder.secretHash(computeSecretHash(req.getEmail()));
-        }
         cognitoClient.confirmSignUp(builder.build());
         log.info("Email verificat: {}", req.getEmail());
     }
@@ -197,19 +147,16 @@ public class CognitoAuthService {
         ResendConfirmationCodeRequest.Builder builder = ResendConfirmationCodeRequest.builder()
                 .clientId(cognitoProperties.getClientId())
                 .username(req.getEmail());
-        if (hasClientSecret()) {
-            builder.secretHash(computeSecretHash(req.getEmail()));
-        }
         cognitoClient.resendConfirmationCode(builder.build());
     }
 
     // ── LOGIN ─────────────────────────────────────────────────────────────────
 
     public AuthResponse login(LoginRequest req) {
-        Map<String, String> params = authParams(req.getEmail(), Map.of(
+        Map<String, String> params = Map.of(
                 "USERNAME", req.getEmail(),
                 "PASSWORD", req.getPassword()
-        ));
+        );
 
         AuthenticationResultType tokens;
         try {
@@ -252,10 +199,9 @@ public class CognitoAuthService {
     // ── REFRESH ───────────────────────────────────────────────────────────────
 
     public AuthResponse refresh(RefreshRequest req) {
-        // SECRET_HASH = HMAC(email + clientId) — Cognito username = email în acest pool
-        Map<String, String> params = authParams(req.getEmail(), Map.of(
+        Map<String, String> params = Map.of(
                 "REFRESH_TOKEN", req.getRefreshToken()
-        ));
+        );
 
         AuthenticationResultType tokens = cognitoClient.initiateAuth(
                 InitiateAuthRequest.builder()
@@ -284,9 +230,6 @@ public class CognitoAuthService {
                 software.amazon.awssdk.services.cognitoidentityprovider.model.ForgotPasswordRequest.builder()
                         .clientId(cognitoProperties.getClientId())
                         .username(req.getEmail());
-        if (hasClientSecret()) {
-            builder.secretHash(computeSecretHash(req.getEmail()));
-        }
         cognitoClient.forgotPassword(builder.build());
     }
 
@@ -298,9 +241,6 @@ public class CognitoAuthService {
                 .username(req.getEmail())
                 .confirmationCode(req.getCode())
                 .password(req.getNewPassword());
-        if (hasClientSecret()) {
-            builder.secretHash(computeSecretHash(req.getEmail()));
-        }
         cognitoClient.confirmForgotPassword(builder.build());
         log.info("Parolă resetată pentru: {}", req.getEmail());
     }
@@ -387,8 +327,14 @@ public class CognitoAuthService {
         String lastName  = spaceIdx >= 0 ? displayName.substring(spaceIdx + 1) : "";
 
         String rawRole = user.getRole() != null ? user.getRole().toLowerCase() : "student";
-        String normalizedRole = (rawRole.equals("professor") || rawRole.equals("teacher"))
-                ? "PROFESSOR" : "STUDENT";
+        String normalizedRole;
+        if (rawRole.equals("admin")) {
+            normalizedRole = "ADMIN";
+        } else if (rawRole.equals("professor") || rawRole.equals("teacher")) {
+            normalizedRole = "PROFESSOR";
+        } else {
+            normalizedRole = "STUDENT";
+        }
 
         return UserResponse.builder()
                 .id(user.getId())

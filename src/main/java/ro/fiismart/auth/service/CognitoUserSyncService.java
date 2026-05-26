@@ -74,7 +74,7 @@ public class CognitoUserSyncService {
         // Grupul intern Cognito (ex: "eu-north-1_puAbduwjE_Google") nu înseamnă rol ales.
         boolean hasRoleGroup = groups != null && groups.stream()
                 .anyMatch(g -> g.equalsIgnoreCase("STUDENT") || g.equalsIgnoreCase("PROFESSOR")
-                        || g.equalsIgnoreCase("TEACHER"));
+                        || g.equalsIgnoreCase("TEACHER") || g.equalsIgnoreCase("ADMIN"));
         boolean needsRoleSelection = isFederated && !hasRoleGroup;
         String role = needsRoleSelection ? null : determineRole(groups);
         String displayName = (name != null && !name.isBlank()) ? name
@@ -111,6 +111,7 @@ public class CognitoUserSyncService {
     private String determineRole(List<String> groups) {
         if (groups == null || groups.isEmpty()) return "student";
         for (String g : groups) {
+            if (g.equalsIgnoreCase("ADMIN")) return "admin";
             if (g.equalsIgnoreCase("TEACHER") || g.equalsIgnoreCase("PROFESSOR")) return "professor";
         }
         return "student";
