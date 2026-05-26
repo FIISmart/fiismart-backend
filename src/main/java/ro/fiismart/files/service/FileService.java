@@ -6,12 +6,14 @@ import com.mongodb.client.gridfs.model.GridFSFile;
 import com.mongodb.client.gridfs.model.GridFSUploadOptions;
 import org.bson.Document;
 import org.bson.types.ObjectId;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.files.dto.FileUploadResponse;
 
 import java.io.IOException;
+import java.util.Date;
 import java.util.Set;
 
 import static com.mongodb.client.model.Filters.eq;
@@ -26,18 +28,15 @@ public class FileService {
             "image/jpeg", "image/png", "image/webp", "image/gif"
     );
 
-    private static final Set<String> DOCUMENT_TYPES = Set.of(
-            "application/pdf",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/zip",
-            "application/x-zip-compressed"
-    );
+    private static final Set<String> LECTURE_TYPES = Set.of("application/pdf");
 
     private final GridFSBucket gridFsBucket;
+    private final GridFSBucket legacyUploadsGridFsBucket;
 
-    public FileService(GridFSBucket gridFsBucket) {
+    public FileService(GridFSBucket gridFsBucket,
+                       @Qualifier("legacyUploadsGridFsBucket") GridFSBucket legacyUploadsGridFsBucket) {
         this.gridFsBucket = gridFsBucket;
+        this.legacyUploadsGridFsBucket = legacyUploadsGridFsBucket;
     }
 
     public FileUploadResponse uploadThumbnail(MultipartFile file) {
@@ -47,18 +46,38 @@ public class FileService {
     }
 
     public FileUploadResponse uploadLectureFile(MultipartFile file) {
-        validate(file, DOCUMENT_TYPES, MAX_FILE_SIZE,
-                "Tip fisier nepermis pentru lectie (PDF, DOC, DOCX, ZIP)");
+        validate(file, LECTURE_TYPES, MAX_FILE_SIZE,
+                "Tip fisier nepermis pentru lectie (PDF)");
         return store(file, "lecture");
     }
 
     public DownloadPayload download(String id) {
+        return download(id, null);
+    }
+
+    public DownloadPayload downloadLecture(String id) {
+        return download(id, "lecture");
+    }
+
+    private DownloadPayload download(String id, String expectedCategory) {
         ObjectId oid = toObjectId(id);
-        GridFSFile gridFile = gridFsBucket.find(eq("_id", oid)).first();
-        if (gridFile == null) {
+        GridFileRef fileRef = findFile(oid);
+        if (fileRef == null) {
             throw new ResourceNotFoundException("File not found: " + id);
         }
-        GridFSDownloadStream stream = gridFsBucket.openDownloadStream(oid);
+        GridFSFile gridFile = fileRef.file();
+        if (expectedCategory != null) {
+            String category = gridFile.getMetadata() != null
+                    ? gridFile.getMetadata().getString("category")
+                    : null;
+            String kind = gridFile.getMetadata() != null
+                    ? gridFile.getMetadata().getString("kind")
+                    : null;
+            if (!expectedCategory.equals(category) && !expectedCategory.equals(kind)) {
+                throw new ResourceNotFoundException("File not found: " + id);
+            }
+        }
+        GridFSDownloadStream stream = fileRef.bucket().openDownloadStream(oid);
         String contentType = gridFile.getMetadata() != null
                 ? gridFile.getMetadata().getString("contentType")
                 : "application/octet-stream";
@@ -67,16 +86,22 @@ public class FileService {
 
     public void delete(String id) {
         ObjectId oid = toObjectId(id);
-        if (gridFsBucket.find(eq("_id", oid)).first() == null) {
+        GridFileRef fileRef = findFile(oid);
+        if (fileRef == null) {
             throw new ResourceNotFoundException("File not found: " + id);
         }
-        gridFsBucket.delete(oid);
+        fileRef.bucket().delete(oid);
     }
 
     private FileUploadResponse store(MultipartFile file, String category) {
         try {
+            String contentType = normalizeContentType(file);
             Document metadata = new Document()
-                    .append("contentType", file.getContentType())
+                    .append("originalFilename", file.getOriginalFilename())
+                    .append("contentType", contentType)
+                    .append("size", file.getSize())
+                    .append("uploadedAt", new Date())
+                    .append("kind", category)
                     .append("category", category)
                     .append("originalName", file.getOriginalFilename());
 
@@ -90,9 +115,9 @@ public class FileService {
 
             return FileUploadResponse.builder()
                     .id(id.toHexString())
-                    .url("/api/v1/files/" + id.toHexString())
+                    .url(fileUrl(category, id.toHexString()))
                     .filename(file.getOriginalFilename())
-                    .contentType(file.getContentType())
+                    .contentType(contentType)
                     .size(file.getSize())
                     .build();
         } catch (IOException e) {
@@ -108,9 +133,41 @@ public class FileService {
             throw new IllegalArgumentException("Fisier prea mare. Limita: " + (maxSize / (1024 * 1024)) + " MB");
         }
         String contentType = file.getContentType();
-        if (contentType == null || !allowedTypes.contains(contentType)) {
+        String normalized = normalizeContentType(file);
+        if ((contentType == null || !allowedTypes.contains(contentType)) && !allowedTypes.contains(normalized)) {
             throw new IllegalArgumentException(typeError + ". Primit: " + contentType);
         }
+    }
+
+    private String normalizeContentType(MultipartFile file) {
+        String contentType = file.getContentType();
+        if (contentType != null && !contentType.isBlank() && !"application/octet-stream".equalsIgnoreCase(contentType)) {
+            return contentType.toLowerCase();
+        }
+        String filename = file.getOriginalFilename();
+        if (filename != null && filename.toLowerCase().endsWith(".pdf")) {
+            return "application/pdf";
+        }
+        return contentType != null ? contentType.toLowerCase() : "application/octet-stream";
+    }
+
+    private String fileUrl(String category, String id) {
+        if ("lecture".equals(category)) {
+            return "/api/v1/files/lecture/" + id;
+        }
+        return "/api/v1/files/" + id;
+    }
+
+    private GridFileRef findFile(ObjectId oid) {
+        GridFSFile file = gridFsBucket.find(eq("_id", oid)).first();
+        if (file != null) {
+            return new GridFileRef(gridFsBucket, file);
+        }
+        GridFSFile legacyFile = legacyUploadsGridFsBucket.find(eq("_id", oid)).first();
+        if (legacyFile != null) {
+            return new GridFileRef(legacyUploadsGridFsBucket, legacyFile);
+        }
+        return null;
     }
 
     private ObjectId toObjectId(String id) {
@@ -126,4 +183,6 @@ public class FileService {
             String contentType,
             long size
     ) {}
+
+    private record GridFileRef(GridFSBucket bucket, GridFSFile file) {}
 }

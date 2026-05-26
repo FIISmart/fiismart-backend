@@ -42,8 +42,19 @@ public class FileController {
     @GetMapping("/{id}")
     public ResponseEntity<InputStreamResource> download(@PathVariable String id) {
         FileService.DownloadPayload payload = fileService.download(id);
+        return fileResponse(payload);
+    }
+
+    @GetMapping("/lecture/{id}")
+    public ResponseEntity<InputStreamResource> downloadLecture(@PathVariable String id) {
+        FileService.DownloadPayload payload = fileService.downloadLecture(id);
+        return fileResponse(payload);
+    }
+
+    private ResponseEntity<InputStreamResource> fileResponse(FileService.DownloadPayload payload) {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + payload.filename() + "\"")
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=3600")
                 .contentType(MediaType.parseMediaType(payload.contentType()))
                 .contentLength(payload.size())
                 .body(new InputStreamResource(payload.stream()));
