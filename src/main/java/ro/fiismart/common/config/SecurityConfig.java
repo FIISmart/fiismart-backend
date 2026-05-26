@@ -60,6 +60,8 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health").permitAll()
                 // Landing page is public — anonymous visitors read these.
                 .requestMatchers(HttpMethod.GET, "/api/v1/landing/**").permitAll()
+                // File downloads are public — <img>/<iframe> cannot send Bearer tokens.
+                .requestMatchers(HttpMethod.GET, "/api/v1/files/**").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/v1/teacher-dashboard/**").hasRole("PROFESSOR")
                 .anyRequest().authenticated()
