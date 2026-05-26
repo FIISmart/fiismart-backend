@@ -54,7 +54,8 @@ public class SecurityConfig {
                     "/api/v1/auth/reset-password",
                     "/api/v1/auth/verify-email",
                     "/api/v1/auth/resend-verification",
-                    "/api/v1/auth/refresh"
+                    "/api/v1/auth/refresh",
+                    "/api/v1/auth/oauth/exchange"
                 ).permitAll()
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
