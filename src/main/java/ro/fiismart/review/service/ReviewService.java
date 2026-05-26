@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import ro.fiismart.common.exception.ResourceNotFoundException;
 import ro.fiismart.common.model.Review;
 import ro.fiismart.common.model.User;
+import ro.fiismart.common.repository.CourseRepository;
 import ro.fiismart.common.repository.ReviewRepository;
 import ro.fiismart.common.repository.UserRepository;
 import ro.fiismart.review.dto.ReviewRequest;
@@ -24,6 +25,7 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final MongoTemplate mongoTemplate;
     private final UserRepository userRepository;
+    private final CourseRepository courseRepository;
 
     public ReviewResponse create(ReviewRequest request) {
         Review review = Review.builder()
@@ -34,7 +36,14 @@ public class ReviewService {
                 .createdAt(new Date())
                 .deleted(false)
                 .build();
-        return toResponse(reviewRepository.save(review));
+
+        Review saved = reviewRepository.save(review);
+        courseRepository.findById(review.getCourseId()).ifPresent(course -> {
+            course.setAvgRating(computeAvgRating(course.getId()));
+            courseRepository.save(course);
+        });
+
+        return toResponse(saved);
     }
 
     public ReviewResponse findById(String reviewId) {
