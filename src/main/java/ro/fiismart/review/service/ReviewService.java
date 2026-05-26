@@ -70,9 +70,15 @@ public class ReviewService {
         List<Review> reviews = reviewRepository.findByCourseIdAndDeletedFalse(courseId);
         if (reviews.isEmpty()) return 0.0;
 
-        Map<String, Review> latestPerStudent = new LinkedHashMap<>();
+        Map<String, Review> latestPerStudent = new HashMap<>();
         for (Review r : reviews) {
-            latestPerStudent.put(r.getStudentId(), r);
+            latestPerStudent.merge(r.getStudentId(), r, (current, candidate) -> {
+                Date currentCreatedAt = current.getCreatedAt();
+                Date candidateCreatedAt = candidate.getCreatedAt();
+                if (currentCreatedAt == null) return candidate;
+                if (candidateCreatedAt == null) return current;
+                return candidateCreatedAt.after(currentCreatedAt) ? candidate : current;
+            });
         }
 
         Collection<Review> unique = latestPerStudent.values();
