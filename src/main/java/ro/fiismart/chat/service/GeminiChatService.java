@@ -14,6 +14,7 @@ import ro.fiismart.chat.dto.request.RouteContextDTO;
 import ro.fiismart.chat.model.ChatMessage;
 import ro.fiismart.chat.model.ChatSession;
 import ro.fiismart.chat.model.ToolCall;
+import ro.fiismart.chat.tools.ToolProgressEvent;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -209,9 +210,14 @@ public class GeminiChatService {
                 for (ToolCall tc : iterToolCalls) {
                     Object result;
                     final String dispatchedTool = tc.getName();
+                    // Progress consumer: each event becomes an SSE
+                    // `tool_progress` row on the client. We catch
+                    // emit failures (client disconnected) and trip
+                    // the cancel handle so the orchestrator can stop
+                    // shoveling progress into a dead emitter.
                     ToolDispatchContext dispatchCtx = new ToolDispatchContext(
                             userId, routeContext,
-                            ev -> { /* phase-5 wires this to SSE tool_progress */ });
+                            ev -> emitToolProgress(emitter, dispatchedTool, ev, cancel));
                     try {
                         result = toolHandler.dispatch(dispatchedTool, tc.getArgs(), dispatchCtx);
                     } catch (Exception e) {
@@ -357,6 +363,36 @@ public class GeminiChatService {
             emitter.send(SseEmitter.event().name(name).data(payload, MediaType.APPLICATION_JSON));
         } catch (IOException ioe) {
             log.debug("Chat SSE post-event send failed: {}", ioe.getClass().getSimpleName());
+            cancel.cancel();
+        }
+    }
+
+    /**
+     * Forwards one {@link ToolProgressEvent} to the SSE client as a
+     * {@code tool_progress} event. Falls back to the tool name from the
+     * dispatched tool when the orchestrator omitted it (some single-
+     * step handlers do — they only have one tool involved).
+     *
+     * <p>On any throw — typically the client has disconnected and the
+     * emitter is dead — we trip the cancel handle so the orchestrator
+     * stops calling the consumer for the rest of its loop.
+     */
+    private void emitToolProgress(SseEmitter emitter,
+                                  String dispatchedTool,
+                                  ToolProgressEvent ev,
+                                  GeminiClient.StreamCancelHandle cancel) {
+        if (cancel.isCancelled()) return;
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("name", ev.name() != null ? ev.name() : dispatchedTool);
+            payload.put("step", ev.step());
+            payload.put("total", ev.total());
+            payload.put("message", ev.message());
+            emitter.send(SseEmitter.event()
+                    .name("tool_progress")
+                    .data(payload, MediaType.APPLICATION_JSON));
+        } catch (Exception ioe) {
+            log.debug("Chat tool_progress send failed: {}", ioe.getClass().getSimpleName());
             cancel.cancel();
         }
     }
