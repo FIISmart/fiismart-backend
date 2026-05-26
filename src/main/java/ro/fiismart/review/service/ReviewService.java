@@ -106,7 +106,7 @@ public class ReviewService {
         reviewRepository.findById(reviewId).ifPresent(r -> {
             mongoTemplate.updateFirst(
                     Query.query(Criteria.where("id").is(reviewId)),
-                    new Update().set("isDeleted", true).set("deletedBy", deletedByUserId),
+                    new Update().set("deleted", true).set("deletedBy", deletedByUserId),
                     Review.class);
             syncCourseAvgRating(r.getCourseId());
         });
