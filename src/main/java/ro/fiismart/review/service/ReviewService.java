@@ -14,10 +14,7 @@ import ro.fiismart.common.repository.UserRepository;
 import ro.fiismart.review.dto.ReviewRequest;
 import ro.fiismart.review.dto.ReviewResponse;
 
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -72,8 +69,15 @@ public class ReviewService {
     public double computeAvgRating(String courseId) {
         List<Review> reviews = reviewRepository.findByCourseIdAndDeletedFalse(courseId);
         if (reviews.isEmpty()) return 0.0;
-        double total = reviews.stream().mapToInt(Review::getStars).sum();
-        return Math.round((total / reviews.size()) * 10.0) / 10.0;
+
+        Map<String, Review> latestPerStudent = new LinkedHashMap<>();
+        for (Review r : reviews) {
+            latestPerStudent.put(r.getStudentId(), r);
+        }
+
+        Collection<Review> unique = latestPerStudent.values();
+        double total = unique.stream().mapToInt(Review::getStars).sum();
+        return Math.round((total / unique.size()) * 10.0) / 10.0;
     }
 
     public void updateReview(String reviewId, int newStars, String newBody) {
