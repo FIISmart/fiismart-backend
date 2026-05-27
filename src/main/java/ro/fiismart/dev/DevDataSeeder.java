@@ -1,5 +1,8 @@
 package ro.fiismart.dev;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -23,6 +26,11 @@ public class DevDataSeeder implements ApplicationRunner {
     private final TutorRequestRepository tutorRequestRepository;
     private final Environment environment;
 
+    @Value("${spring.data.mongodb.uri:}")
+    private String mongoUri;
+
+    private static final Logger log = LoggerFactory.getLogger(DevDataSeeder.class);
+
     public DevDataSeeder(UserRepository userRepository,
                          CourseRepository courseRepository,
                          ModuleQuizRepository moduleQuizRepository,
@@ -41,7 +49,24 @@ public class DevDataSeeder implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (Arrays.stream(environment.getActiveProfiles()).anyMatch(profile -> "prod".equalsIgnoreCase(profile))) {
+        // Allow-list, not deny-list. Bail unless a `dev` or `local` profile
+        // is explicitly active. Railway and similar hosts run with no active
+        // profile by default — a deny-list (`bail if prod`) is a foot-gun
+        // since one env-var typo (`FIISMART_SEED_DEMO_DATA_ENABLED=true`)
+        // would then seed staging or prod Mongo.
+        boolean isDevOrLocal = Arrays.stream(environment.getActiveProfiles())
+                .anyMatch(p -> "dev".equalsIgnoreCase(p) || "local".equalsIgnoreCase(p));
+        if (!isDevOrLocal) {
+            log.warn("[Seed] Skipping demo seed — no 'dev' or 'local' profile active. " +
+                    "Active profiles: {}", Arrays.toString(environment.getActiveProfiles()));
+            return;
+        }
+
+        // Belt-and-suspenders: refuse to seed if pointed at Atlas, which is
+        // where our shared staging/prod cluster lives.
+        if (mongoUri != null && mongoUri.contains("mongodb.net")) {
+            log.error("[Seed] REFUSING to seed: spring.data.mongodb.uri points at Mongo Atlas " +
+                    "(host contains 'mongodb.net'). Seeder is for local-only DBs.");
             return;
         }
 
