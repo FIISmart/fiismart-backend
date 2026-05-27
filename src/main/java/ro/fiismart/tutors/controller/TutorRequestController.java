@@ -3,6 +3,7 @@ package ro.fiismart.tutors.controller;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -29,6 +30,7 @@ public class TutorRequestController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<TutorRequestResponse> create(
             @AuthenticationPrincipal String studentId,
             @Valid @RequestBody TutorRequestCreateRequest request) {
@@ -36,16 +38,19 @@ public class TutorRequestController {
     }
 
     @GetMapping("/professor/me")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<List<TutorRequestResponse>> listForProfessor(@AuthenticationPrincipal String professorId) {
         return ResponseEntity.ok(tutorRequestService.listForProfessor(professorId));
     }
 
     @GetMapping("/student/me")
+    @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<List<TutorRequestResponse>> listForStudent(@AuthenticationPrincipal String studentId) {
         return ResponseEntity.ok(tutorRequestService.listForStudent(studentId));
     }
 
     @PatchMapping("/{id}/status")
+    @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<TutorRequestResponse> updateStatus(
             @AuthenticationPrincipal String professorId,
             @PathVariable String id,

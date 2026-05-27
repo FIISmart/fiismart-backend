@@ -1,5 +1,8 @@
 package ro.fiismart.dev;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -9,11 +12,19 @@ import ro.fiismart.common.model.*;
 import ro.fiismart.common.repository.*;
 
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.UUID;
 
 @Component
 @ConditionalOnProperty(prefix = "fiismart.seed.demo-data", name = "enabled", havingValue = "true", matchIfMissing = false)
 public class DevDataSeeder implements ApplicationRunner {
+
+    private static final Logger log = LoggerFactory.getLogger(DevDataSeeder.class);
 
     private final UserRepository userRepository;
     private final CourseRepository courseRepository;
@@ -22,6 +33,9 @@ public class DevDataSeeder implements ApplicationRunner {
     private final QuizAttemptRepository quizAttemptRepository;
     private final TutorRequestRepository tutorRequestRepository;
     private final Environment environment;
+
+    @Value("${spring.data.mongodb.uri:}")
+    private String mongoUri;
 
     public DevDataSeeder(UserRepository userRepository,
                          CourseRepository courseRepository,
@@ -41,7 +55,16 @@ public class DevDataSeeder implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (Arrays.stream(environment.getActiveProfiles()).anyMatch(profile -> "prod".equalsIgnoreCase(profile))) {
+        boolean isDevOrLocal = Arrays.stream(environment.getActiveProfiles())
+                .anyMatch(p -> "dev".equalsIgnoreCase(p) || "local".equalsIgnoreCase(p));
+        if (!isDevOrLocal) {
+            log.warn("[Seed] Skipping demo seed - no 'dev' or 'local' profile active. Active profiles: {}",
+                    Arrays.toString(environment.getActiveProfiles()));
+            return;
+        }
+
+        if (mongoUri != null && mongoUri.contains("mongodb.net")) {
+            log.error("[Seed] REFUSING to seed: spring.data.mongodb.uri points at Mongo Atlas.");
             return;
         }
 
@@ -173,7 +196,13 @@ public class DevDataSeeder implements ApplicationRunner {
     }
 
     private CourseModule module(String id, String title, int order, List<Lecture> lectures) {
-        return CourseModule.builder().id(id).title(title).description("Lectii scurte si aplicate").order(order).lectures(lectures).build();
+        return CourseModule.builder()
+                .id(id)
+                .title(title)
+                .description("Lectii scurte si aplicate")
+                .order(order)
+                .lectures(lectures)
+                .build();
     }
 
     private Lecture lecture(String moduleId, String title, String type, String content, String videoUrl, int order, int durationSecs) {
@@ -192,6 +221,7 @@ public class DevDataSeeder implements ApplicationRunner {
 
     private void upsertQuizzes(Course course) {
         if (!moduleQuizRepository.findAllByCourseId(course.getId()).isEmpty()) return;
+
         CourseModule firstModule = course.getModules().get(0);
         Lecture firstLecture = firstModule.getLectures().get(0);
 
@@ -203,7 +233,10 @@ public class DevDataSeeder implements ApplicationRunner {
                 .title("Quiz rapid: " + firstLecture.getTitle())
                 .passingScore(70)
                 .timeLimit(10)
-                .questions(List.of(mc("Care este primul pas recomandat?", List.of("Citirea obiectivelor", "Sarirea peste exemple", "Memorarea fara practica"), 0), written("Scrie un concept important din lectie.", course.getTags().get(0))))
+                .questions(List.of(
+                        mc("Care este primul pas recomandat?", List.of("Citirea obiectivelor", "Sarirea peste exemple", "Memorarea fara practica"), 0),
+                        written("Scrie un concept important din lectie.", course.getTags().get(0))
+                ))
                 .build());
 
         moduleQuizRepository.save(ModuleQuiz.builder()
@@ -213,7 +246,9 @@ public class DevDataSeeder implements ApplicationRunner {
                 .title("Verificare modul: " + firstModule.getTitle())
                 .passingScore(70)
                 .timeLimit(15)
-                .questions(List.of(mc("Ce ajuta cel mai mult la invatare?", List.of("Exercitiile practice", "Ignorarea feedbackului", "Copierea solutiilor"), 0)))
+                .questions(List.of(
+                        mc("Ce ajuta cel mai mult la invatare?", List.of("Exercitiile practice", "Ignorarea feedbackului", "Copierea solutiilor"), 0)
+                ))
                 .build());
 
         moduleQuizRepository.save(ModuleQuiz.builder()
@@ -222,7 +257,10 @@ public class DevDataSeeder implements ApplicationRunner {
                 .title("Quiz final: " + course.getTitle())
                 .passingScore(75)
                 .timeLimit(25)
-                .questions(List.of(mc("Ce reprezinta un curs finalizat?", List.of("Lectii parcurse si concepte intelese", "Doar deschiderea paginii", "Un singur click"), 0), written("Mentioneaza o abilitate exersata in curs.", course.getTags().get(0))))
+                .questions(List.of(
+                        mc("Ce reprezinta un curs finalizat?", List.of("Lectii parcurse si concepte intelese", "Doar deschiderea paginii", "Un singur click"), 0),
+                        written("Mentioneaza o abilitate exersata in curs.", course.getTags().get(0))
+                ))
                 .build());
     }
 
