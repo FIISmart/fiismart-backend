@@ -38,7 +38,12 @@ public class CourseContentAiService {
     /** Hard cap on per-lecture markdown content. Communicated to the
      *  model via the schema's description; we don't trim server-side
      *  because partial markdown is worse than verbose markdown. */
-    private static final int MAX_LECTURE_CONTENT_CHARS = 4000;
+    private static final int MAX_LECTURE_CONTENT_CHARS = 6000;
+
+    /** Concrete target the prompt pushes the model toward. Without a
+     *  target the model historically returned ~300-500 char lectures
+     *  even when the cap was 4000. */
+    private static final int TARGET_LECTURE_CONTENT_CHARS = 2400;
 
     private final GeminiClient geminiClient;
     private final ObjectMapper objectMapper;
@@ -90,26 +95,55 @@ public class CourseContentAiService {
                                       int moduleCount, int lecturesPerModule,
                                       int questionsPerQuiz, boolean includeQuizzes,
                                       String language) {
-        StringBuilder sb = new StringBuilder(1024);
-        sb.append("Genereaza un curs educational complet, in limba ");
+        StringBuilder sb = new StringBuilder(2048);
+        sb.append("Genereaza un curs educational COMPLET si DETALIAT, in limba ");
         sb.append(language == null || language.isBlank() ? "romana" : language).append(".\n");
         sb.append("Subiect: \"").append(subject).append("\".\n");
         sb.append("Public tinta: ").append(audience).append(".\n");
-        sb.append("Structura ceruta: ").append(moduleCount).append(" module, fiecare cu ")
-                .append(lecturesPerModule).append(" lectii.\n");
-        sb.append("Continutul fiecarei lectii trebuie sa fie un text didactic in markdown ")
-                .append("(maxim ").append(MAX_LECTURE_CONTENT_CHARS).append(" caractere), ")
-                .append("structurat cu titluri, paragrafe si exemple. Estimeaza durationSecs ")
-                .append("(intre 180 si 900 secunde, in functie de complexitate).\n");
+        sb.append("Structura: exact ").append(moduleCount).append(" module, fiecare cu exact ")
+                .append(lecturesPerModule).append(" lectii.\n\n");
+
+        sb.append("=== CALITATEA CONTINUTULUI (foarte important) ===\n");
+        sb.append("Fiecare lectie trebuie sa fie un mini-articol didactic real, NU un rezumat ")
+                .append("de 3 randuri. Tinta: aproximativ ")
+                .append(TARGET_LECTURE_CONTENT_CHARS).append(" caractere de markdown ")
+                .append("(intre ").append(TARGET_LECTURE_CONTENT_CHARS - 600).append(" si ")
+                .append(MAX_LECTURE_CONTENT_CHARS).append("). Fiecare lectie include:\n");
+        sb.append("  1. Un paragraf introductiv (de ce conteaza subiectul pentru cititor).\n");
+        sb.append("  2. 2-4 sub-sectiuni cu titluri `## Titlu sub-sectiune`.\n");
+        sb.append("  3. Cel putin o lista cu puncte cheie (bullet list).\n");
+        sb.append("  4. Cel putin un exemplu concret (cod, scenariu real, formula etc.) — folosind ")
+                .append("blocuri de cod cu backticks triple cand are sens.\n");
+        sb.append("  5. Un paragraf de incheiere care leaga lectia de urmatoarea sau de aplicabilitate practica.\n");
+        sb.append("Foloseste diacritice complete (ă, â, î, ș, ț). NU folosi emoji sau decoratiuni cu # excesive.\n");
+        sb.append("Estimeaza durationSecs proportional cu lungimea reala a continutului (300-1200s).\n\n");
+
+        sb.append("=== STRUCTURA CURSULUI ===\n");
+        sb.append("Lectiile dintr-un modul urmeaza o progresie: concept de baza -> aprofundare -> aplicatie.\n");
+        sb.append("Modulele insele urmeaza o progresie: fundamente -> intermediar -> avansat / aplicat.\n");
+        sb.append("Titlurile lectiilor sunt distincte, descriptive, fara generice gen \"Introducere\" repetate.\n");
+        sb.append("Descrierea cursului are 2-3 propozitii care explica clar ce va sti audienta la final.\n");
+        sb.append("Tag-urile cursului: 3-6 cuvinte cheie relevante, in minuscule.\n\n");
+
         if (includeQuizzes) {
-            sb.append("Pentru fiecare modul, genereaza si un quiz cu ").append(questionsPerQuiz)
-                    .append(" intrebari multiple_choice cu exact 4 optiuni si o singura ")
-                    .append("corecta (correctIdx in {0,1,2,3}). passingScore intre 60 si 80.\n");
+            sb.append("=== QUIZ-URI ===\n");
+            sb.append("Fiecare modul are un quiz cu exact ").append(questionsPerQuiz)
+                    .append(" intrebari de tip multiple_choice. Reguli:\n");
+            sb.append("  - Exact 4 optiuni per intrebare, una singura corecta (correctIdx in {0,1,2,3}).\n");
+            sb.append("  - Intrebarile testeaza intelegerea reala, NU memorarea termenilor — ")
+                    .append("includ scenarii, identificare a erorilor comune, alegerea celei mai bune solutii.\n");
+            sb.append("  - Optiunile gresite sunt PLAUZIBILE (distractori realisti), nu absurde.\n");
+            sb.append("  - explanation: 1-2 propozitii care EXPLICA de ce raspunsul corect e corect ")
+                    .append("si de ce celelalte sunt gresite. NU doar repeta optiunea corecta.\n");
+            sb.append("  - Progresia de dificultate: prima intrebare basic, ultimele intrebari mai complexe.\n");
+            sb.append("  - passingScore intre 60 si 80, in functie de dificultatea modulului.\n\n");
         } else {
-            sb.append("Nu include quiz pentru module.\n");
+            sb.append("Nu include quiz pentru module.\n\n");
         }
-        sb.append("Asigura-te ca lectiile au titluri distincte si urmaresc o progresie logica. ")
-                .append("Returneaza JSON conform schemei, fara text in afara JSON-ului.");
+
+        sb.append("=== OUTPUT ===\n");
+        sb.append("Returneaza UN SINGUR obiect JSON conform schemei, fara text in afara JSON-ului, ")
+                .append("fara backticks de markdown. Toate string-urile sunt UTF-8 cu diacritice corecte.");
         return sb.toString();
     }
 
@@ -123,8 +157,11 @@ public class CourseContentAiService {
         lectureProps.put("title", Map.of("type", "string"));
         lectureProps.put("content", Map.of(
                 "type", "string",
-                "description", "Continutul lectiei in markdown, maxim "
-                        + MAX_LECTURE_CONTENT_CHARS + " caractere."
+                "description", "Continutul lectiei in markdown. Tinta " + TARGET_LECTURE_CONTENT_CHARS
+                        + " caractere (max " + MAX_LECTURE_CONTENT_CHARS + "). Trebuie sa includa: "
+                        + "paragraf introductiv, 2-4 sub-sectiuni cu ## titluri, cel putin o lista "
+                        + "cu puncte cheie, cel putin un exemplu concret, paragraf de incheiere. "
+                        + "NU rezumate de 3 randuri."
         ));
         lectureProps.put("durationSecs", Map.of(
                 "type", "integer",
