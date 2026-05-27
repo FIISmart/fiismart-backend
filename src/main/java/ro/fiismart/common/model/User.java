@@ -35,6 +35,7 @@ public class User {
     private String role;
     private String headline;
     private String bio;
+    private String phone;
     @Builder.Default
     private List<String> subjects = new ArrayList<>();
     private Double tutorRating;

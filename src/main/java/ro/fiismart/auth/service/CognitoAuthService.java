@@ -396,6 +396,29 @@ public class CognitoAuthService {
         return toUserResponse(user, emailVerified);
     }
 
+    public UserResponse updateMe(String userId, UpdateProfileRequest req) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        String displayName = clean(req.getDisplayName());
+        if (displayName == null) {
+            String firstName = clean(req.getFirstName());
+            String lastName = clean(req.getLastName());
+            if (firstName != null || lastName != null) {
+                displayName = ((firstName != null ? firstName : "") + " " + (lastName != null ? lastName : "")).trim();
+            }
+        }
+        if (displayName != null && !displayName.isBlank()) {
+            user.setDisplayName(displayName);
+        }
+        user.setPhone(clean(req.getPhone()));
+        user.setBio(clean(req.getBio()));
+        user.setAvatarUrl(clean(req.getAvatarUrl()));
+
+        User saved = userRepository.save(user);
+        return toUserResponse(saved, saved.getCognitoSub() != null);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private User findAndStampLogin(String cognitoSub) {
@@ -474,6 +497,9 @@ public class CognitoAuthService {
                 .lastName(lastName)
                 .displayName(displayName)
                 .role(normalizedRole)
+                .phone(user.getPhone())
+                .bio(user.getBio())
+                .avatarUrl(user.getAvatarUrl())
                 .emailVerified(emailVerified)
                 .needsRoleSelection(user.isNeedsRoleSelection())
                 .banned(user.isBanned())
@@ -485,5 +511,11 @@ public class CognitoAuthService {
                 .createdAt(user.getCreatedAt())
                 .lastLoginAt(user.getLastLoginAt())
                 .build();
+    }
+
+    private String clean(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }
