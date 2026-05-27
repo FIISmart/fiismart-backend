@@ -14,7 +14,8 @@ public class ModuleQuizQuestionRequest {
     /** Optional image URL displayed alongside the question. */
     private String imageUrl;
 
-    /** One of {@code "multiple_choice"} (default) or {@code "written"}. */
+    /** One of {@code "multiple_choice"} (default), {@code "written"} or
+     *  {@code "free_text"} (AI-graded). */
     private String type = "multiple_choice";
     private int points = 1;
 
@@ -26,6 +27,15 @@ public class ModuleQuizQuestionRequest {
 
     /** Required for {@code "written"} questions; null for {@code "multiple_choice"}. */
     private String correctText;
+
+    /** Reference answer for {@code "free_text"} questions (AI grader rubric). */
+    private String sampleAnswer;
+
+    /** Required concepts for {@code "free_text"} questions (AI grader rubric). */
+    private List<String> keyConcepts;
+
+    /** Pass threshold 0-100 for {@code "free_text"} questions; defaults to 70 server-side. */
+    private Integer passThreshold;
 
     private String explanation;
 }

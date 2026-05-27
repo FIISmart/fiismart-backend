@@ -18,6 +18,12 @@ public class ModuleQuizQuestionResponse {
     private List<String> options;
     private Integer correctIdx;
     private String correctText;
+    /** Reference answer for {@code "free_text"} questions (AI grader rubric). */
+    private String sampleAnswer;
+    /** Required concepts for {@code "free_text"} questions (AI grader rubric). */
+    private List<String> keyConcepts;
+    /** Pass threshold 0-100 for {@code "free_text"} questions. */
+    private Integer passThreshold;
     private String explanation;
 
     public static ModuleQuizQuestionResponse fromModel(ModuleQuizQuestion q) {
@@ -31,6 +37,9 @@ public class ModuleQuizQuestionResponse {
                 .options(q.getOptions())
                 .correctIdx(q.getCorrectIdx())
                 .correctText(q.getCorrectText())
+                .sampleAnswer(q.getSampleAnswer())
+                .keyConcepts(q.getKeyConcepts())
+                .passThreshold(q.getPassThreshold())
                 .explanation(q.getExplanation())
                 .build();
     }

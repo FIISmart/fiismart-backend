@@ -434,7 +434,16 @@ public class QuizAttemptService {
                         .build());
             } else {
                 // default to multiple_choice
-                boolean correct = q.getCorrectIdx() != null && q.getCorrectIdx() == in.getSelectedIdx();
+                Integer storedCorrectIdx = q.getCorrectIdx();
+                int submittedIdx = in.getSelectedIdx();
+                boolean correct = storedCorrectIdx != null && storedCorrectIdx == submittedIdx;
+                // Structured per-grade log so the next time MCQ grading
+                // regresses (e.g. a future DTO drops `correctIdx` again or
+                // an option array gets reordered) we can confirm whether
+                // the stored answer key, the submitted index, or the
+                // comparison itself is at fault — without needing a debugger.
+                log.info("MCQ grade quizId={} questionId={} storedCorrectIdx={} submittedSelectedIdx={} correct={}",
+                        quiz.getId(), q.getId(), storedCorrectIdx, submittedIdx, correct);
                 graded.add(Answer.builder()
                         .questionId(in.getQuestionId())
                         .selectedIdx(in.getSelectedIdx())
@@ -518,6 +527,19 @@ public class QuizAttemptService {
         int threshold = question.getPassThreshold() == null
                 ? DEFAULT_FREE_TEXT_PASS_THRESHOLD
                 : question.getPassThreshold();
+
+        // Surface bad data fast: if either rubric input is missing the AI grader
+        // grades the student answer against an empty rubric → every answer
+        // scores 0 and is marked wrong. The fix is in the save path, not here,
+        // but log so a similar regression is obvious in Railway logs next time.
+        if (question.getSampleAnswer() == null
+                || question.getKeyConcepts() == null
+                || question.getKeyConcepts().isEmpty()) {
+            log.warn("free_text rubric incomplete (questionId={}, hasSample={}, conceptCount={}) — AI will grade against an empty rubric",
+                    question.getId(),
+                    question.getSampleAnswer() != null,
+                    question.getKeyConcepts() == null ? 0 : question.getKeyConcepts().size());
+        }
 
         FreeTextGradeResult result;
         try {

@@ -224,6 +224,13 @@ public class ModuleQuizService {
                 .options(req.getOptions())
                 .correctIdx(req.getCorrectIdx())
                 .correctText(req.getCorrectText())
+                // Free-text (AI-graded) rubric — nullable for non-free_text types.
+                // Without these, AiTextGraderService receives null sampleAnswer
+                // and null keyConcepts and grades every student answer against
+                // an empty rubric, which always lands below the pass threshold.
+                .sampleAnswer(req.getSampleAnswer())
+                .keyConcepts(req.getKeyConcepts())
+                .passThreshold(req.getPassThreshold())
                 .explanation(req.getExplanation())
                 .build();
     }
