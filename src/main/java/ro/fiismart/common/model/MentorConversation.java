@@ -5,22 +5,34 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Document(collection = "TutorRequests")
-public class TutorRequest {
+@Document(collection = "MentorConversations")
+public class MentorConversation {
     @Id
     private String id;
+
+    @Indexed(unique = true)
+    private String requestId;
+
+    @Indexed
     private String studentId;
+
+    @Indexed
     private String tutorId;
-    private String message;
-    private String status;
-    private String conversationId;
+
+    @Builder.Default
+    private List<MentorMessage> messages = new ArrayList<>();
+
     private Date createdAt;
+    private Date updatedAt;
 }

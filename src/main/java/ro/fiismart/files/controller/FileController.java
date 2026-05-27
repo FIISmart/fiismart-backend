@@ -33,6 +33,12 @@ public class FileController {
         return ResponseEntity.status(HttpStatus.CREATED).body(fileService.uploadThumbnail(file));
     }
 
+    @PostMapping(value = "/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<FileUploadResponse> uploadAvatar(@RequestParam("file") MultipartFile file) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(fileService.uploadAvatar(file));
+    }
+
     @PostMapping(value = "/lecture", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('PROFESSOR')")
     public ResponseEntity<FileUploadResponse> uploadLectureFile(@RequestParam("file") MultipartFile file) {

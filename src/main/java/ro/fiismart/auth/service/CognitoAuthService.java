@@ -31,6 +31,7 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -396,6 +397,38 @@ public class CognitoAuthService {
         return toUserResponse(user, emailVerified);
     }
 
+    public UserResponse updateMe(String userId, UpdateProfileRequest req) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        String displayName = clean(req.getDisplayName());
+        if (displayName == null) {
+            String firstName = clean(req.getFirstName());
+            String lastName = clean(req.getLastName());
+            if (firstName != null || lastName != null) {
+                displayName = ((firstName != null ? firstName : "") + " " + (lastName != null ? lastName : "")).trim();
+            }
+        }
+        if (displayName != null && !displayName.isBlank()) {
+            user.setDisplayName(displayName);
+        }
+        user.setPhone(clean(req.getPhone()));
+        user.setBio(clean(req.getBio()));
+        user.setAvatarUrl(clean(req.getAvatarUrl()));
+        user.setFaculty(clean(req.getFaculty()));
+        user.setSpecialization(clean(req.getSpecialization()));
+        user.setStudyYear(req.getStudyYear());
+        user.setEducationLevel(clean(req.getEducationLevel()));
+        user.setDepartment(clean(req.getDepartment()));
+        user.setAcademicTitle(clean(req.getAcademicTitle()));
+        user.setInterests(cleanList(req.getInterests()));
+        user.setSubjects(cleanList(req.getSubjects()));
+        user.setTutorProfileEnabled(req.getTutorProfileEnabled());
+
+        User saved = userRepository.save(user);
+        return toUserResponse(saved, saved.getCognitoSub() != null);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private User findAndStampLogin(String cognitoSub) {
@@ -474,6 +507,18 @@ public class CognitoAuthService {
                 .lastName(lastName)
                 .displayName(displayName)
                 .role(normalizedRole)
+                .phone(user.getPhone())
+                .bio(user.getBio())
+                .avatarUrl(user.getAvatarUrl())
+                .faculty(user.getFaculty())
+                .specialization(user.getSpecialization())
+                .studyYear(user.getStudyYear())
+                .educationLevel(user.getEducationLevel())
+                .department(user.getDepartment())
+                .academicTitle(user.getAcademicTitle())
+                .interests(user.getInterests())
+                .subjects(user.getSubjects())
+                .tutorProfileEnabled(user.getTutorProfileEnabled())
                 .emailVerified(emailVerified)
                 .needsRoleSelection(user.isNeedsRoleSelection())
                 .banned(user.isBanned())
@@ -485,5 +530,21 @@ public class CognitoAuthService {
                 .createdAt(user.getCreatedAt())
                 .lastLoginAt(user.getLastLoginAt())
                 .build();
+    }
+
+    private String clean(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private List<String> cleanList(List<String> values) {
+        if (values == null) return List.of();
+        return values.stream()
+                .map(this::clean)
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .limit(20)
+                .toList();
     }
 }

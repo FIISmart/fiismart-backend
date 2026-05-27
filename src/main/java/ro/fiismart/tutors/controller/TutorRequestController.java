@@ -15,6 +15,9 @@ import org.springframework.web.bind.annotation.RestController;
 import ro.fiismart.tutors.dto.TutorRequestCreateRequest;
 import ro.fiismart.tutors.dto.TutorRequestResponse;
 import ro.fiismart.tutors.dto.TutorRequestStatusUpdateRequest;
+import ro.fiismart.tutors.dto.MentorConversationResponse;
+import ro.fiismart.tutors.dto.MentorMessageRequest;
+import ro.fiismart.tutors.dto.MentorMessageResponse;
 import ro.fiismart.tutors.service.TutorRequestService;
 
 import java.util.List;
@@ -56,5 +59,30 @@ public class TutorRequestController {
             @PathVariable String id,
             @Valid @RequestBody TutorRequestStatusUpdateRequest request) {
         return ResponseEntity.ok(tutorRequestService.updateStatus(professorId, id, request));
+    }
+
+    @GetMapping("/{id}/conversation")
+    @PreAuthorize("hasAnyRole('STUDENT','PROFESSOR')")
+    public ResponseEntity<MentorConversationResponse> getConversation(
+            @AuthenticationPrincipal String userId,
+            @PathVariable String id) {
+        return ResponseEntity.ok(tutorRequestService.getConversation(userId, id));
+    }
+
+    @GetMapping("/conversations/{conversationId}/messages")
+    @PreAuthorize("hasAnyRole('STUDENT','PROFESSOR')")
+    public ResponseEntity<List<MentorMessageResponse>> listMessages(
+            @AuthenticationPrincipal String userId,
+            @PathVariable String conversationId) {
+        return ResponseEntity.ok(tutorRequestService.listMessages(userId, conversationId));
+    }
+
+    @PostMapping("/conversations/{conversationId}/messages")
+    @PreAuthorize("hasAnyRole('STUDENT','PROFESSOR')")
+    public ResponseEntity<MentorMessageResponse> sendMessage(
+            @AuthenticationPrincipal String userId,
+            @PathVariable String conversationId,
+            @Valid @RequestBody MentorMessageRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(tutorRequestService.sendMessage(userId, conversationId, request));
     }
 }

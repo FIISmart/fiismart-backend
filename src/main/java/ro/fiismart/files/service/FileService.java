@@ -45,6 +45,12 @@ public class FileService {
         return store(file, "thumbnail");
     }
 
+    public FileUploadResponse uploadAvatar(MultipartFile file) {
+        validate(file, IMAGE_TYPES, MAX_IMAGE_SIZE,
+                "Doar imagini sunt permise (JPG, PNG, WebP, GIF)");
+        return store(file, "avatar");
+    }
+
     public FileUploadResponse uploadLectureFile(MultipartFile file) {
         validate(file, LECTURE_TYPES, MAX_FILE_SIZE,
                 "Tip fisier nepermis pentru lectie (PDF)");

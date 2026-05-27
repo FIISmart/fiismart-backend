@@ -35,6 +35,16 @@ public class User {
     private String role;
     private String headline;
     private String bio;
+    private String phone;
+    private String faculty;
+    private String specialization;
+    private Integer studyYear;
+    private String educationLevel;
+    private String department;
+    private String academicTitle;
+    @Builder.Default
+    private List<String> interests = new ArrayList<>();
+    private Boolean tutorProfileEnabled;
     @Builder.Default
     private List<String> subjects = new ArrayList<>();
     private Double tutorRating;

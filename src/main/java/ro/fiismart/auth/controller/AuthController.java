@@ -110,6 +110,13 @@ public class AuthController {
         return ResponseEntity.ok(authService.getMe(userId));
     }
 
+    @PatchMapping("/me")
+    public ResponseEntity<UserResponse> updateMe(
+            @AuthenticationPrincipal String userId,
+            @Valid @RequestBody UpdateProfileRequest req) {
+        return ResponseEntity.ok(authService.updateMe(userId, req));
+    }
+
     /**
      * Utilizatorii federați (Google) fără rol selectat apelează acest endpoint
      * după ce aleg STUDENT sau PROFESSOR în pagina de Finalizare Profil.

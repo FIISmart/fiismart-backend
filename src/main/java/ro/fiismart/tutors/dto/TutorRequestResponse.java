@@ -16,6 +16,7 @@ public class TutorRequestResponse {
     private String tutorName;
     private String message;
     private String status;
+    private String conversationId;
     private Date createdAt;
 
     public static TutorRequestResponse fromModel(TutorRequest request) {
@@ -31,6 +32,7 @@ public class TutorRequestResponse {
                 .tutorName(tutorName)
                 .message(request.getMessage())
                 .status(request.getStatus())
+                .conversationId(request.getConversationId())
                 .createdAt(request.getCreatedAt())
                 .build();
     }
