@@ -33,6 +33,16 @@ public class User {
     private String cognitoUsername;
 
     private String role;
+    private String headline;
+    private String bio;
+    @Builder.Default
+    private List<String> subjects = new ArrayList<>();
+    private Double tutorRating;
+    private Integer tutorReviewCount;
+    private Integer experienceYears;
+    private String avatarUrl;
+    private String availability;
+    private String priceLabel;
     /** Rolul anterior promovării la admin — restaurat la retrogradare. */
     private String baseRole;
     /** True pentru utilizatorii federați (Google) nou creați care nu și-au ales rolul încă. */

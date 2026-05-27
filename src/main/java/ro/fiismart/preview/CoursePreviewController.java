@@ -27,36 +27,5 @@ public class CoursePreviewController {
         this.userRepository = userRepository;
     }
 
-    @PreAuthorize("hasRole('PROFESSOR')")
-    @GetMapping("/courses/{courseId}")
-    public StudentCourseHeaderDTO getCoursePreview(@PathVariable String courseId) {
 
-        String callerId = SecurityContextHolder.getContext().getAuthentication().getName();
-
-        Course course = courseRepository.findById(courseId)
-                .orElseThrow(() -> new ResourceNotFoundException("Course not found: " + courseId));
-
-        if (!callerId.equals(course.getTeacherId())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
-        }
-
-        User teacher = userRepository.findById(callerId).orElse(null);
-
-        StudentCourseHeaderDTO dto = new StudentCourseHeaderDTO();
-        dto.setCourseId(course.getId());
-        dto.setTitle(course.getTitle());
-        dto.setDescription(course.getDescription());
-        dto.setThumbnailUrl(course.getThumbnailUrl());
-        dto.setLanguage(course.getLanguage());
-        dto.setStatus(course.getStatus());
-        dto.setTags(course.getTags());
-        dto.setTeacherId(course.getTeacherId());
-        dto.setTeacherDisplayName(teacher != null ? teacher.getDisplayName() : "");
-        dto.setAvgRating(course.getAvgRating());
-        dto.setEnrollmentCount(course.getEnrollmentCount());
-        dto.setEnrolled(false);
-        dto.setOverallProgress(0);
-        dto.setFinalQuiz(null);
-        return dto;
-    }
 }

@@ -1,5 +1,6 @@
 package ro.fiismart.dashboard.student.controller;
 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,7 +19,8 @@ public class StudentPlayableQuizController {
     }
 
     @GetMapping("/{quizId}")
-    public StudentPlayableQuizDTO getPlayableQuiz(@PathVariable String quizId) {
-        return studentQuizService.getPlayableQuiz(quizId);
+    public StudentPlayableQuizDTO getPlayableQuiz(@PathVariable String quizId,
+                                                  @AuthenticationPrincipal String userId) {
+        return studentQuizService.getPlayableQuiz(userId, quizId);
     }
 }

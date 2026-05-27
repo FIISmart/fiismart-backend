@@ -129,6 +129,9 @@ public class QuizAttemptService {
     public StartQuizAttemptResponse startAttempt(String studentId, String quizId) {
         ModuleQuiz quiz = moduleQuizRepository.findById(quizId)
                 .orElseThrow(() -> new ResourceNotFoundException("Quiz not found: " + quizId));
+        if (!enrollmentRepository.existsByStudentIdAndCourseId(studentId, quiz.getCourseId())) {
+            throw new ForbiddenException("Student is not enrolled in this course");
+        }
 
         // Idempotency guard — re-use an already-running attempt.
         QuizAttempt existing = quizAttemptRepository

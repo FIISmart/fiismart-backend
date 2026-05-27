@@ -1,11 +1,13 @@
 package ro.fiismart.dashboard.student.service;
 
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.AccessDeniedException;
 import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.ModuleQuiz;
 import ro.fiismart.common.model.Quiz;
 import ro.fiismart.common.model.QuizAttempt;
 import ro.fiismart.common.repository.CourseRepository;
+import ro.fiismart.common.repository.EnrollmentRepository;
 import ro.fiismart.common.repository.ModuleQuizRepository;
 import ro.fiismart.common.repository.QuizAttemptRepository;
 import ro.fiismart.common.repository.QuizRepository;
@@ -22,15 +24,18 @@ public class StudentQuizService {
     private final QuizRepository quizRepository;
     private final ModuleQuizRepository moduleQuizRepository;
     private final QuizAttemptRepository quizAttemptRepository;
+    private final EnrollmentRepository enrollmentRepository;
 
     public StudentQuizService(CourseRepository courseRepository,
                               QuizRepository quizRepository,
                               ModuleQuizRepository moduleQuizRepository,
-                              QuizAttemptRepository quizAttemptRepository) {
+                              QuizAttemptRepository quizAttemptRepository,
+                              EnrollmentRepository enrollmentRepository) {
         this.courseRepository = courseRepository;
         this.quizRepository = quizRepository;
         this.moduleQuizRepository = moduleQuizRepository;
         this.quizAttemptRepository = quizAttemptRepository;
+        this.enrollmentRepository = enrollmentRepository;
     }
 
     public StudentQuizStatusDTO getQuizStatus(String studentId, String courseId) {
@@ -52,11 +57,28 @@ public class StudentQuizService {
         return buildStatus(quiz.getId(), quiz.getTitle(), "course_final", null, null, studentId);
     }
 
-    public StudentPlayableQuizDTO getPlayableQuiz(String quizId) {
+    public StudentPlayableQuizDTO getPlayableQuiz(String userId, String quizId) {
         return moduleQuizRepository.findById(quizId)
-                .map(StudentPlayableQuizDTO::fromModuleQuiz)
-                .or(() -> quizRepository.findById(quizId).map(StudentPlayableQuizDTO::fromLegacyQuiz))
+                .map(quiz -> {
+                    assertCanReadQuiz(userId, quiz.getCourseId());
+                    return StudentPlayableQuizDTO.fromModuleQuiz(quiz);
+                })
+                .or(() -> quizRepository.findById(quizId).map(quiz -> {
+                    assertCanReadQuiz(userId, quiz.getCourseId());
+                    return StudentPlayableQuizDTO.fromLegacyQuiz(quiz);
+                }))
                 .orElseThrow(() -> new ResourceNotFoundException("Quiz not found: " + quizId));
+    }
+
+    private void assertCanReadQuiz(String userId, String courseId) {
+        if (userId == null || userId.isBlank() || courseId == null || courseId.isBlank()) {
+            throw new AccessDeniedException("Quiz access denied");
+        }
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
+        if (userId.equals(course.getTeacherId())) return;
+        if (enrollmentRepository.existsByStudentIdAndCourseId(userId, courseId)) return;
+        throw new AccessDeniedException("Quiz access denied");
     }
 
     public StudentQuizStatusDTO buildStatus(String quizId, String title, String scope,
