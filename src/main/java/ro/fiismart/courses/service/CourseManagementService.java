@@ -39,7 +39,7 @@ public class CourseManagementService {
                 .teacherId(req.getTeacherId())
                 .status("draft")
                 .tags(req.getTags() != null ? req.getTags() : new ArrayList<>())
-                .thumbnailUrl(req.getThumbnailUrl())
+                .thumbnailUrl(normalizeStoredFileUrl(req.getThumbnailUrl()))
                 .language(req.getLanguage())
                 .enrollmentCount(0)
                 .avgRating(0.0)
@@ -82,7 +82,7 @@ public class CourseManagementService {
         if (req.getTitle() != null) course.setTitle(req.getTitle());
         if (req.getDescription() != null) course.setDescription(req.getDescription());
         if (req.getTags() != null) course.setTags(req.getTags());
-        if (req.getThumbnailUrl() != null) course.setThumbnailUrl(req.getThumbnailUrl());
+        if (req.getThumbnailUrl() != null) course.setThumbnailUrl(normalizeStoredFileUrl(req.getThumbnailUrl()));
         if (req.getLanguage() != null) course.setLanguage(req.getLanguage());
         course.setUpdatedAt(new Date());
 
@@ -246,7 +246,7 @@ public class CourseManagementService {
     }
 
     public LectureResponse updateLectureInModule(String courseId, String moduleId, String lectureId,
-                                                  UpdateLectureRequest req) {
+                                                 UpdateLectureRequest req) {
         courseRepository.findById(courseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Course", courseId));
 
@@ -360,9 +360,9 @@ public class CourseManagementService {
     }
 
     private String resolveLectureContent(String content, String videoUrl, String pdfUrl) {
-        if (content != null) return content;
-        if (pdfUrl != null) return pdfUrl;
-        if (videoUrl != null) return videoUrl;
+        if (content != null) return normalizeStoredFileUrl(content);
+        if (pdfUrl != null) return normalizeStoredFileUrl(pdfUrl);
+        if (videoUrl != null) return normalizeStoredFileUrl(videoUrl);
         return "";
     }
 
@@ -379,16 +379,29 @@ public class CourseManagementService {
     }
 
     private String resolveVideoUrl(String type, String content, String videoUrl) {
-        String resolvedType = resolveLectureType(type, content, videoUrl, null);
-        if (!"video".equals(resolvedType)) return videoUrl;
-        if (videoUrl != null) return videoUrl;
-        return content;
+        String normalizedContent = normalizeStoredFileUrl(content);
+        String normalizedVideoUrl = normalizeStoredFileUrl(videoUrl);
+
+        String resolvedType = resolveLectureType(type, normalizedContent, normalizedVideoUrl, null);
+        if (!"video".equals(resolvedType)) return normalizedVideoUrl;
+        if (normalizedVideoUrl != null) return normalizedVideoUrl;
+        return normalizedContent;
     }
 
     private String resolvePdfUrl(String type, String content, String pdfUrl) {
-        String resolvedType = resolveLectureType(type, content, null, pdfUrl);
-        if (!"pdf".equals(resolvedType)) return pdfUrl;
-        if (pdfUrl != null) return pdfUrl;
-        return content;
+        String normalizedContent = normalizeStoredFileUrl(content);
+        String normalizedPdfUrl = normalizeStoredFileUrl(pdfUrl);
+
+        String resolvedType = resolveLectureType(type, normalizedContent, null, normalizedPdfUrl);
+        if (!"pdf".equals(resolvedType)) return normalizedPdfUrl;
+        if (normalizedPdfUrl != null) return normalizedPdfUrl;
+        return normalizedContent;
+    }
+
+    private String normalizeStoredFileUrl(String value) {
+        if (value == null || value.isBlank()) {
+            return value;
+        }
+        return value.replaceFirst("^https?://localhost:\\d+(?=/api/v1/files/)", "");
     }
 }

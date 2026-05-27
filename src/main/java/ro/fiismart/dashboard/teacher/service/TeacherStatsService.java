@@ -3,7 +3,7 @@ package ro.fiismart.dashboard.teacher.service;
 import org.springframework.stereotype.Service;
 import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.Enrollment;
-import ro.fiismart.common.model.Quiz;
+import ro.fiismart.common.model.ModuleQuiz;
 import ro.fiismart.common.model.QuizAttempt;
 import ro.fiismart.common.repository.*;
 import ro.fiismart.dashboard.teacher.dto.TeacherStatsDTO;
@@ -17,16 +17,16 @@ public class TeacherStatsService {
     private final CourseRepository courseRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final QuizAttemptRepository quizAttemptRepository;
-    private final QuizRepository quizRepository;
+    private final ModuleQuizRepository moduleQuizRepository;
 
     public TeacherStatsService(CourseRepository courseRepository,
                                EnrollmentRepository enrollmentRepository,
                                QuizAttemptRepository quizAttemptRepository,
-                               QuizRepository quizRepository) {
+                               ModuleQuizRepository moduleQuizRepository) {
         this.courseRepository = courseRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.quizAttemptRepository = quizAttemptRepository;
-        this.quizRepository = quizRepository;
+        this.moduleQuizRepository = moduleQuizRepository;
     }
 
     public TeacherStatsDTO getStats(String teacherId) {
@@ -41,6 +41,10 @@ public class TeacherStatsService {
         int totalEnrollments = 0;
         int completedEnrollments = 0;
         int quizzesCompleted = 0;
+        int totalQuizzes = 0;
+        int lectureQuizzes = 0;
+        int moduleQuizzes = 0;
+        int finalQuizzes = 0;
 
         for (String courseId : courseIds) {
             List<Enrollment> enrollments = enrollmentRepository.findByCourseId(courseId);
@@ -49,8 +53,12 @@ public class TeacherStatsService {
                     .filter(e -> "completed".equalsIgnoreCase(e.getStatus()) || e.getCompletedAt() != null)
                     .count();
 
-            Quiz quiz = quizRepository.findByCourseId(courseId).orElse(null);
-            if (quiz != null) {
+            List<ModuleQuiz> quizzes = moduleQuizRepository.findAllByCourseId(courseId);
+            totalQuizzes += quizzes.size();
+            for (ModuleQuiz quiz : quizzes) {
+                if ("lecture".equalsIgnoreCase(quiz.getQuizScope())) lectureQuizzes++;
+                else if ("module".equalsIgnoreCase(quiz.getQuizScope())) moduleQuizzes++;
+                else if ("course_final".equalsIgnoreCase(quiz.getQuizScope())) finalQuizzes++;
                 quizzesCompleted += quizAttemptRepository.findByQuizId(quiz.getId()).size();
             }
         }
@@ -63,6 +71,10 @@ public class TeacherStatsService {
         dto.setStudentsEnrolled(totalEnrollments);
         dto.setActiveCourses(activeCourses);
         dto.setQuizzesCompleted(quizzesCompleted);
+        dto.setTotalQuizzes(totalQuizzes);
+        dto.setLectureQuizzes(lectureQuizzes);
+        dto.setModuleQuizzes(moduleQuizzes);
+        dto.setFinalQuizzes(finalQuizzes);
         dto.setCompletionRatePct(Math.round(completionRatePct * 10.0) / 10.0);
         return dto;
     }

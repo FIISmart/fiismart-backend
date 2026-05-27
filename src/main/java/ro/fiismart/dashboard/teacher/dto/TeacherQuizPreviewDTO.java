@@ -8,6 +8,7 @@ public class TeacherQuizPreviewDTO {
     private String title;
     private String courseId;
     private String courseTitle;
+    private String quizScope;
     private int attemptsCount;
     private double avgScorePct;
     private String status;

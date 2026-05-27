@@ -60,6 +60,11 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/landing/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/files/**").permitAll()
+                // Public browsing must go through sanitized /landing/* endpoints
+                // (which filter status=published + strip teacher PII). Do NOT
+                // permitAll /api/v1/courses or /api/v1/tutors — they return
+                // raw repository payloads including drafts, hidden courses,
+                // and every professor account regardless of consent.
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/v1/teacher-dashboard/**").hasRole("PROFESSOR")
                 .anyRequest().authenticated()

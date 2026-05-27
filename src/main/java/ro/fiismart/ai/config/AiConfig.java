@@ -33,11 +33,5 @@ public class AiConfig {
      * service layer with a clear 400 message, so the looser parser cap
      * does not weaken AI input validation.
      */
-    @Bean
-    public MultipartConfigElement multipartConfigElement() {
-        MultipartConfigFactory factory = new MultipartConfigFactory();
-        factory.setMaxFileSize(DataSize.ofMegabytes(50));
-        factory.setMaxRequestSize(DataSize.ofMegabytes(50));
-        return factory.createMultipartConfig();
-    }
+
 }
