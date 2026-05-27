@@ -24,6 +24,15 @@ public class UserResponse {
     private String phone;
     private String bio;
     private String avatarUrl;
+    private String faculty;
+    private String specialization;
+    private Integer studyYear;
+    private String educationLevel;
+    private String department;
+    private String academicTitle;
+    private List<String> interests;
+    private List<String> subjects;
+    private Boolean tutorProfileEnabled;
     private boolean emailVerified;
     /** Dacă true, frontend-ul trebuie să redirecționeze utilizatorul la pagina de selectare rol. */
     private boolean needsRoleSelection;

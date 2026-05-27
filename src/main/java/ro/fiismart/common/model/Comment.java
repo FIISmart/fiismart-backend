@@ -26,6 +26,7 @@ public class Comment {
     private String courseId;
     private String authorId;
     private String body;
+    private String status;
     private Date createdAt;
     private Date updatedAt;
     private Integer positionSecs;

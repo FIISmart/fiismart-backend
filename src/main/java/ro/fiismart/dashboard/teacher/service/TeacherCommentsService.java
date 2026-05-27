@@ -66,10 +66,80 @@ public class TeacherCommentsService {
                 dto.setLikeCount(comment.getLikeCount());
                 dto.setRepliesCount(replies.size());
                 dto.setAnswered(!replies.isEmpty());
+                dto.setStatus(comment.getStatus() != null ? comment.getStatus() : (!replies.isEmpty() ? "ANSWERED" : "OPEN"));
                 result.add(dto);
             }
         }
 
         return result.stream().skip(offset).limit(limit).toList();
+    }
+
+    public TeacherCommentPreviewDTO reply(String teacherId, String commentId, String body) {
+        Comment parent = commentRepository.findById(commentId)
+                .orElseThrow(() -> new NoSuchElementException("Comment not found"));
+        ensureTeacherOwnsCourse(teacherId, parent.getCourseId());
+        if (body == null || body.trim().isEmpty()) {
+            throw new IllegalArgumentException("Raspunsul nu poate fi gol");
+        }
+
+        Comment reply = Comment.builder()
+                .courseId(parent.getCourseId())
+                .lectureId(parent.getLectureId())
+                .authorId(teacherId)
+                .parentCommentId(parent.getId())
+                .body(body.trim())
+                .status("ANSWERED")
+                .createdAt(new Date())
+                .updatedAt(new Date())
+                .deleted(false)
+                .build();
+        commentRepository.save(reply);
+        parent.setStatus("ANSWERED");
+        parent.setUpdatedAt(new Date());
+        commentRepository.save(parent);
+        return toPreview(parent);
+    }
+
+    public TeacherCommentPreviewDTO updateStatus(String teacherId, String commentId, String status) {
+        Comment comment = commentRepository.findById(commentId)
+                .orElseThrow(() -> new NoSuchElementException("Comment not found"));
+        ensureTeacherOwnsCourse(teacherId, comment.getCourseId());
+        String normalized = status == null ? "" : status.trim().toUpperCase(Locale.ROOT);
+        if (!Set.of("OPEN", "ANSWERED", "RESOLVED").contains(normalized)) {
+            throw new IllegalArgumentException("Status invalid");
+        }
+        comment.setStatus(normalized);
+        comment.setUpdatedAt(new Date());
+        commentRepository.save(comment);
+        return toPreview(comment);
+    }
+
+    private void ensureTeacherOwnsCourse(String teacherId, String courseId) {
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new NoSuchElementException("Course not found"));
+        if (!teacherId.equals(course.getTeacherId())) {
+            throw new SecurityException("Nu poti modifica comentarii pentru acest curs");
+        }
+    }
+
+    private TeacherCommentPreviewDTO toPreview(Comment comment) {
+        User author = userRepository.findById(comment.getAuthorId()).orElse(null);
+        Course course = courseRepository.findById(comment.getCourseId()).orElse(null);
+        List<Comment> replies = commentRepository.findRepliesByParentId(comment.getId());
+
+        TeacherCommentPreviewDTO dto = new TeacherCommentPreviewDTO();
+        dto.setCommentId(comment.getId());
+        dto.setCourseId(comment.getCourseId());
+        dto.setCourseTitle(course != null ? course.getTitle() : "");
+        dto.setLectureId(comment.getLectureId());
+        dto.setAuthorId(comment.getAuthorId());
+        dto.setAuthorDisplayName(author != null ? author.getDisplayName() : "");
+        dto.setBody(comment.getBody());
+        dto.setCreatedAt(comment.getCreatedAt());
+        dto.setLikeCount(comment.getLikeCount());
+        dto.setRepliesCount(replies.size());
+        dto.setAnswered(!replies.isEmpty());
+        dto.setStatus(comment.getStatus() != null ? comment.getStatus() : (!replies.isEmpty() ? "ANSWERED" : "OPEN"));
+        return dto;
     }
 }

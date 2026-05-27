@@ -31,6 +31,7 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -414,6 +415,15 @@ public class CognitoAuthService {
         user.setPhone(clean(req.getPhone()));
         user.setBio(clean(req.getBio()));
         user.setAvatarUrl(clean(req.getAvatarUrl()));
+        user.setFaculty(clean(req.getFaculty()));
+        user.setSpecialization(clean(req.getSpecialization()));
+        user.setStudyYear(req.getStudyYear());
+        user.setEducationLevel(clean(req.getEducationLevel()));
+        user.setDepartment(clean(req.getDepartment()));
+        user.setAcademicTitle(clean(req.getAcademicTitle()));
+        user.setInterests(cleanList(req.getInterests()));
+        user.setSubjects(cleanList(req.getSubjects()));
+        user.setTutorProfileEnabled(req.getTutorProfileEnabled());
 
         User saved = userRepository.save(user);
         return toUserResponse(saved, saved.getCognitoSub() != null);
@@ -500,6 +510,15 @@ public class CognitoAuthService {
                 .phone(user.getPhone())
                 .bio(user.getBio())
                 .avatarUrl(user.getAvatarUrl())
+                .faculty(user.getFaculty())
+                .specialization(user.getSpecialization())
+                .studyYear(user.getStudyYear())
+                .educationLevel(user.getEducationLevel())
+                .department(user.getDepartment())
+                .academicTitle(user.getAcademicTitle())
+                .interests(user.getInterests())
+                .subjects(user.getSubjects())
+                .tutorProfileEnabled(user.getTutorProfileEnabled())
                 .emailVerified(emailVerified)
                 .needsRoleSelection(user.isNeedsRoleSelection())
                 .banned(user.isBanned())
@@ -517,5 +536,15 @@ public class CognitoAuthService {
         if (value == null) return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private List<String> cleanList(List<String> values) {
+        if (values == null) return List.of();
+        return values.stream()
+                .map(this::clean)
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .limit(20)
+                .toList();
     }
 }

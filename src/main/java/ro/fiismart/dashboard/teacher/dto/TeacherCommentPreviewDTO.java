@@ -16,4 +16,5 @@ public class TeacherCommentPreviewDTO {
     private int likeCount;
     private int repliesCount;
     private boolean answered;
+    private String status;
 }
