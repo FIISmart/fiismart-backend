@@ -32,6 +32,7 @@ public class DevDataSeeder implements ApplicationRunner {
     private final EnrollmentRepository enrollmentRepository;
     private final QuizAttemptRepository quizAttemptRepository;
     private final TutorRequestRepository tutorRequestRepository;
+    private final MentorConversationRepository mentorConversationRepository;
     private final Environment environment;
 
     @Value("${spring.data.mongodb.uri:}")
@@ -43,6 +44,7 @@ public class DevDataSeeder implements ApplicationRunner {
                          EnrollmentRepository enrollmentRepository,
                          QuizAttemptRepository quizAttemptRepository,
                          TutorRequestRepository tutorRequestRepository,
+                         MentorConversationRepository mentorConversationRepository,
                          Environment environment) {
         this.userRepository = userRepository;
         this.courseRepository = courseRepository;
@@ -50,6 +52,7 @@ public class DevDataSeeder implements ApplicationRunner {
         this.enrollmentRepository = enrollmentRepository;
         this.quizAttemptRepository = quizAttemptRepository;
         this.tutorRequestRepository = tutorRequestRepository;
+        this.mentorConversationRepository = mentorConversationRepository;
         this.environment = environment;
     }
 
@@ -352,20 +355,64 @@ public class DevDataSeeder implements ApplicationRunner {
 
     private void upsertTutorRequests(List<User> students, List<User> tutors) {
         upsertTutorRequest(students.get(0), tutors.get(0), "Am nevoie de ajutor la hooks si structurarea componentelor.", "pending");
-        upsertTutorRequest(students.get(1), tutors.get(1), "Vreau sa inteleg mai bine cum leg un controller de service.", "accepted");
-        upsertTutorRequest(students.get(2), tutors.get(2), "Ma pregatesc pentru examenul de baze de date.", "resolved");
+        TutorRequest accepted = upsertTutorRequest(students.get(1), tutors.get(1), "Vreau sa inteleg mai bine cum leg un controller de service.", "accepted");
+        TutorRequest resolved = upsertTutorRequest(students.get(2), tutors.get(2), "Ma pregatesc pentru examenul de baze de date.", "resolved");
         upsertTutorRequest(students.get(3), tutors.get(3), "As vrea sa exersez probleme de complexitate.", "declined");
+        upsertMentorConversation(accepted, "Salut, am acceptat cererea. Putem incepe cu structura controller-service.");
+        upsertMentorConversation(resolved, "Am revazut schema relationala. Mai exerseaza JOIN-urile si cheile externe.");
     }
 
-    private void upsertTutorRequest(User student, User tutor, String message, String status) {
-        if (tutorRequestRepository.existsByStudentIdAndTutorIdAndStatus(student.getId(), tutor.getId(), status)) return;
-        tutorRequestRepository.save(TutorRequest.builder()
+    private TutorRequest upsertTutorRequest(User student, User tutor, String message, String status) {
+        Optional<TutorRequest> existing = tutorRequestRepository.findByStudentId(student.getId()).stream()
+                .filter(request -> tutor.getId().equals(request.getTutorId()) && status.equalsIgnoreCase(request.getStatus()))
+                .findFirst();
+        if (existing.isPresent()) return existing.get();
+        return tutorRequestRepository.save(TutorRequest.builder()
                 .studentId(student.getId())
                 .tutorId(tutor.getId())
                 .message(message)
                 .status(status)
                 .createdAt(new Date())
                 .build());
+    }
+
+    private void upsertMentorConversation(TutorRequest request, String tutorReply) {
+        if (request == null) return;
+        MentorConversation conversation = mentorConversationRepository.findByRequestId(request.getId()).orElse(null);
+        if (conversation == null) {
+            User student = userRepository.findById(request.getStudentId()).orElse(null);
+            User tutor = userRepository.findById(request.getTutorId()).orElse(null);
+            Date now = new Date();
+            conversation = mentorConversationRepository.save(MentorConversation.builder()
+                    .requestId(request.getId())
+                    .studentId(request.getStudentId())
+                    .tutorId(request.getTutorId())
+                    .messages(new ArrayList<>(List.of(
+                            MentorMessage.builder()
+                                    .id(UUID.randomUUID().toString())
+                                    .senderId(request.getStudentId())
+                                    .senderName(student != null ? student.getDisplayName() : "Student FII Smart")
+                                    .senderRole("student")
+                                    .text(request.getMessage())
+                                    .createdAt(Date.from(Instant.now().minusSeconds(3600)))
+                                    .build(),
+                            MentorMessage.builder()
+                                    .id(UUID.randomUUID().toString())
+                                    .senderId(request.getTutorId())
+                                    .senderName(tutor != null ? tutor.getDisplayName() : "Profesor FII Smart")
+                                    .senderRole("professor")
+                                    .text(tutorReply)
+                                    .createdAt(Date.from(Instant.now().minusSeconds(2400)))
+                                    .build()
+                    )))
+                    .createdAt(now)
+                    .updatedAt(now)
+                    .build());
+        }
+        if (request.getConversationId() == null || !request.getConversationId().equals(conversation.getId())) {
+            request.setConversationId(conversation.getId());
+            tutorRequestRepository.save(request);
+        }
     }
 
     private String introContent(String title) {
