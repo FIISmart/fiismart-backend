@@ -7,12 +7,16 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import ro.fiismart.common.exception.ResourceNotFoundException;
+import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.Enrollment;
 import ro.fiismart.common.model.LectureProgressEntry;
+import ro.fiismart.common.model.User;
 import ro.fiismart.common.repository.CourseRepository;
 import ro.fiismart.common.repository.EnrollmentRepository;
+import ro.fiismart.common.repository.UserRepository;
 import ro.fiismart.enrollment.dto.EnrollmentRequest;
 import ro.fiismart.enrollment.dto.EnrollmentResponse;
+import ro.fiismart.notification.service.NotificationService;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -24,7 +28,32 @@ public class EnrollmentService {
 
     private final EnrollmentRepository enrollmentRepository;
     private final CourseRepository courseRepository;
+    private final UserRepository userRepository;
+    private final NotificationService notificationService;
     private final MongoTemplate mongoTemplate;
+
+    /** Emit both the teacher-facing "new student" notification and the
+     *  student-facing "you enrolled" notification. Lookups are best-effort —
+     *  failures don't break the enrollment itself. */
+    private void notifyEnrollment(String studentId, String courseId) {
+        try {
+            Course course = courseRepository.findById(courseId).orElse(null);
+            if (course == null) return;
+            String courseName = course.getTitle() != null ? course.getTitle() : "Curs";
+            String studentName = userRepository.findById(studentId)
+                    .map(User::getDisplayName)
+                    .filter(s -> s != null && !s.isBlank())
+                    .orElse("Un student");
+            if (course.getTeacherId() != null) {
+                notificationService.createEnrollmentNotification(
+                        course.getTeacherId(), studentName, courseName, courseId);
+            }
+            notificationService.createStudentEnrollmentNotification(
+                    studentId, courseName, courseId);
+        } catch (Exception ignored) {
+            // Notifications are non-critical; never block enrollment.
+        }
+    }
 
     public EnrollmentResponse create(EnrollmentRequest request) {
         ensureCourseExists(request.getCourseId());
@@ -47,6 +76,7 @@ public class EnrollmentService {
             course.setEnrollmentCount((int) enrollmentRepository.countByCourseId(course.getId()));
             courseRepository.save(course);
         });
+        notifyEnrollment(saved.getStudentId(), saved.getCourseId());
 
         return toResponse(saved);
     }
@@ -64,7 +94,9 @@ public class EnrollmentService {
                             .overallProgress(0)
                             .lectureProgress(new ArrayList<>())
                             .build();
-                    return toResponse(enrollmentRepository.save(enrollment));
+                    Enrollment saved = enrollmentRepository.save(enrollment);
+                    notifyEnrollment(studentId, courseId);
+                    return toResponse(saved);
                 });
     }
 

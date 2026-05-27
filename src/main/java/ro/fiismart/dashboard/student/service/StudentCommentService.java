@@ -6,11 +6,14 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import ro.fiismart.common.model.Comment;
+import ro.fiismart.common.model.Course;
 import ro.fiismart.common.model.User;
 import ro.fiismart.common.repository.CommentRepository;
+import ro.fiismart.common.repository.CourseRepository;
 import ro.fiismart.common.repository.UserRepository;
 import ro.fiismart.dashboard.student.dto.CommentCreateRequest;
 import ro.fiismart.dashboard.student.dto.StudentCommentDTO;
+import ro.fiismart.notification.service.NotificationService;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -21,13 +24,19 @@ public class StudentCommentService {
 
     private final CommentRepository commentRepository;
     private final UserRepository userRepository;
+    private final CourseRepository courseRepository;
+    private final NotificationService notificationService;
     private final MongoTemplate mongoTemplate;
 
     public StudentCommentService(CommentRepository commentRepository,
                                  UserRepository userRepository,
+                                 CourseRepository courseRepository,
+                                 NotificationService notificationService,
                                  MongoTemplate mongoTemplate) {
         this.commentRepository = commentRepository;
         this.userRepository = userRepository;
+        this.courseRepository = courseRepository;
+        this.notificationService = notificationService;
         this.mongoTemplate = mongoTemplate;
     }
 
@@ -75,6 +84,7 @@ public class StudentCommentService {
 
         Comment saved = commentRepository.save(comment);
         User author = userRepository.findById(studentId).orElse(null);
+        notifyTeacherOfComment(saved, author);
         return convertToDTO(saved, studentId, author);
     }
 
@@ -97,7 +107,44 @@ public class StudentCommentService {
 
         Comment saved = commentRepository.save(reply);
         User author = userRepository.findById(studentId).orElse(null);
+        notifyReply(parent, studentId, author);
         return convertToDTO(saved, studentId, author);
+    }
+
+    /** Notify the course's teacher when a student posts a comment.
+     *  Best-effort — never blocks the comment write. */
+    private void notifyTeacherOfComment(Comment comment, User author) {
+        try {
+            if (comment.getCourseId() == null) return;
+            Course course = courseRepository.findById(comment.getCourseId()).orElse(null);
+            if (course == null || course.getTeacherId() == null) return;
+            // Don't notify the teacher about their own comments.
+            if (course.getTeacherId().equals(comment.getAuthorId())) return;
+            String authorName = author != null && author.getDisplayName() != null
+                    ? author.getDisplayName() : "Un student";
+            String courseName = course.getTitle() != null ? course.getTitle() : "Curs";
+            notificationService.createCommentNotification(
+                    course.getTeacherId(), authorName, courseName,
+                    comment.getCourseId(), comment.getLectureId());
+        } catch (Exception ignored) {
+            // Notifications are non-critical.
+        }
+    }
+
+    /** Notify the parent comment's author when someone replies.
+     *  Best-effort — never blocks the reply write. */
+    private void notifyReply(Comment parent, String replierId, User replier) {
+        try {
+            if (parent.getAuthorId() == null) return;
+            // Don't notify yourself when replying to your own comment.
+            if (parent.getAuthorId().equals(replierId)) return;
+            String replierName = replier != null && replier.getDisplayName() != null
+                    ? replier.getDisplayName() : "Cineva";
+            notificationService.createReplyNotification(
+                    parent.getAuthorId(), replierName, parent.getCourseId());
+        } catch (Exception ignored) {
+            // Notifications are non-critical.
+        }
     }
 
     public void toggleLike(String studentId, String commentId) {
