@@ -59,8 +59,6 @@ public class SecurityConfig {
                 ).permitAll()
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/landing/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/v1/courses").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/v1/tutors").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/files/**").permitAll()
                 // Public browsing must go through sanitized /landing/* endpoints
                 // (which filter status=published + strip teacher PII). Do NOT

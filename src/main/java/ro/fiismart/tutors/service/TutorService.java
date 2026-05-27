@@ -27,6 +27,11 @@ public class TutorService {
         return userRepository.findAll().stream()
                 .filter(user -> "professor".equalsIgnoreCase(user.getRole()) || "teacher".equalsIgnoreCase(user.getRole()))
                 .filter(user -> !user.isBanned())
+                // Opt-in: only professors that have explicitly enabled their
+                // public tutor profile appear in the directory. Without this
+                // every Cognito-onboarded professor would be auto-listed with
+                // no consent.
+                .filter(user -> Boolean.TRUE.equals(user.getTutorProfileEnabled()))
                 .map(this::toResponse)
                 .sorted(Comparator.comparing(TutorResponse::getPublishedCourseCount).reversed()
                         .thenComparing(TutorResponse::getDisplayName, String.CASE_INSENSITIVE_ORDER))
